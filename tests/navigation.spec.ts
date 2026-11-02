@@ -1,2 +1,98 @@
-import { test, expect } from '@playwright/test';
-test('navegación y estados sin datos', async ({page})=>{await page.goto('/');await expect(page.getByRole('heading',{name:'Resumen financiero'})).toBeVisible();await expect(page.getByText('La información financiera aún no está conectada.').first()).toBeVisible();for(const [label,path] of [['Ingresos totales','/ingresos'],['Gastos totales','/gastos'],['Saldo neto','/movimientos']] as const){await page.goto('/');await page.getByRole('link',{name:new RegExp(label)}).click();await expect(page).toHaveURL(path);await expect(page.getByText('Sin datos disponibles')).toBeVisible();await expect(page.locator('select').first()).toBeDisabled()}await page.goto('/');for(const [name,id] of [['Ferraro Detail','ferraro-detail'],['PPF House','ppf-house'],['RFN Argentina','rfn-argentina']] as const){await page.getByRole('link',{name:new RegExp(name)}).click();await expect(page).toHaveURL(`/empresas/${id}`);await expect(page.getByRole('heading',{name})).toBeVisible();await page.goto('/')}for(const [name,path] of [['Inicio','/'],['Ingresos','/ingresos'],['Gastos','/gastos'],['Movimientos','/movimientos'],['Empresas','/empresas']] as const){await page.getByRole('navigation').getByRole('link',{name,exact:true}).click();await expect(page).toHaveURL(path)}expect((await page.goto('/empresas/desconocida'))?.status()).toBe(404)});
+import { test, expect, type Page } from '@playwright/test';
+import { ownerEmail, ownerPassword, testPool } from './fixtures/auth';
+async function login(page: Page) {
+  await page.goto('/login');
+  await page.getByLabel('Email', { exact: true }).fill(ownerEmail);
+  await page.getByLabel('Contraseña', { exact: true }).fill(ownerPassword);
+  await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
+  await expect(page).toHaveURL('/');
+}
+test.beforeEach(async () => {
+  const pool = testPool();
+  try { await pool.query('TRUNCATE "session", "rateLimit"'); await pool.query('UPDATE "user" SET active=true'); }
+  finally { await pool.end(); }
+});
+test('anonymous HTML and RSC requests cannot access financial pages, even with a forged cookie', async ({ page, request, context }) => {
+  for (const path of ['/', '/empresas/rfn-argentina', '/empresas', '/gastos', '/ingresos', '/movimientos']) {
+    await page.goto(path); await expect(page).toHaveURL('/login');
+    await expect(page.getByRole('navigation')).toHaveCount(0);
+    const response = await request.get(path + '?_rsc=test', { headers: { RSC: '1' }, maxRedirects: 0 });
+    expect(response.status()).toBe(307); expect(await response.text()).not.toContain('100,00');
+    expect(response.headers()['cache-control']).toContain('no-store');
+  }
+  await context.addCookies([{ name: 'better-auth.session_token', value: 'forged', domain: '127.0.0.1', path: '/' }]);
+  await page.goto('/gastos'); await expect(page).toHaveURL('/login');
+});
+test('login has accessible controls, generic failures and rejects signup and foreign origins', async ({ page, request }, testInfo) => {
+  await page.goto('/login?from=https://attacker.example');
+  await expect(page.getByRole('heading', { name: 'Acceso privado' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.screenshot({ path: `/tmp/multiempresa-login-${testInfo.project.name}.png` });
+  await page.getByLabel('Email', { exact: true }).fill(ownerEmail);
+  await page.getByLabel('Contraseña', { exact: true }).fill('invalid-password-123');
+  await page.getByRole('button', { name: 'Mostrar' }).click();
+  await expect(page.getByLabel('Contraseña', { exact: true })).toHaveAttribute('type', 'text');
+  await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
+  await expect(page.locator('form').getByRole('alert')).toContainText('Revisá tus credenciales');
+  expect((await request.post('/api/auth/sign-up/email', { data: { email: 'other@example.test', password: ownerPassword } })).status()).toBe(404);
+  expect((await request.post('/api/auth/sign-in/email', { headers: { Origin: 'https://attacker.example' }, data: { email: ownerEmail, password: ownerPassword } })).status()).toBe(403);
+  await login(page); // Redirect target is fixed to this app's dashboard.
+});
+test('private summary, honest pending sources, exact amounts, filtering and pagination', async ({ page }) => {
+  await login(page);
+  await expect(page.getByText('Consolidado incompleto', { exact: true })).toBeVisible();
+  await expect(page.getByText('USD 59,70', { exact: true })).toBeVisible();
+  await expect(page.getByText('USD 40,30', { exact: true })).toBeVisible();
+  for (const [name,id] of [['Ferraro Detail','ferraro-detail'], ['PPF House','ppf-house'], ['RFN Argentina','rfn-argentina']] as const) {
+    await page.goto(`/empresas/${id}`); await expect(page.getByRole('heading', { name, exact: true }).first()).toBeVisible();
+    if (id === 'rfn-argentina') await expect(page.getByText('USD 10,20', { exact: true })).toBeVisible();
+    else await expect(page.getByText('Pendiente de conexión').first()).toBeVisible();
+  }
+  await page.goto('/gastos');
+  await expect(page.getByRole('table')).toBeVisible();
+  await expect(page.getByText('PERSONAL_NAME_MUST_NOT_LEAK')).toHaveCount(0);
+  expect(await page.content()).not.toContain('PERSONAL_NAME_MUST_NOT_LEAK');
+  const rsc = await page.request.get('/gastos?_rsc=private-check', { headers: { RSC: '1' } });
+  expect(await rsc.text()).not.toContain('PERSONAL_NAME_MUST_NOT_LEAK');
+  await page.getByLabel('Categoría original').fill('Sueldos'); await page.getByRole('button', { name: 'Consultar' }).click();
+  await page.getByRole('link', { name: 'Siguiente' }).click();
+  await expect(page.getByText('Página 2 de 2')).toBeVisible();
+  await expect(page).toHaveURL(/categoria=Sueldos/);
+  for (const path of ['/ingresos', '/movimientos']) { await page.goto(path); await expect(page.getByText('Sin datos disponibles')).toBeVisible(); }
+  const response = await page.goto('/empresas/desconocida'); expect(response?.status()).toBe(404);
+  await page.goto('/?desde=2026-01-01&hasta=2026-01-31');
+  await expect(page.getByRole('status')).toContainText('rechazado');
+  await expect(page.getByText('USD 0,00')).toHaveCount(0);
+});
+test('logout revokes the server session; expired, revoked and disabled accounts lose access', async ({ page, context, request }) => {
+  await login(page);
+  const cookies = await context.cookies();
+  expect(cookies.find(cookie => cookie.name.includes('session_token'))).toMatchObject({ httpOnly: true, sameSite: 'Lax' });
+  await page.getByRole('button', { name: 'Cerrar sesión' }).click(); await expect(page).toHaveURL('/login');
+  const oldCookie = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+  const revoked = await request.get('/empresas/rfn-argentina', { headers: { Cookie: oldCookie }, maxRedirects: 0 }); expect(revoked.status()).toBe(307);
+  await login(page);
+  const pool = testPool();
+  try { await pool.query('UPDATE "session" SET "expiresAt"=NOW() - interval \'1 second\''); } finally { await pool.end(); }
+  await page.goto('/gastos'); await expect(page).toHaveURL('/login');
+  await login(page);
+  const disabledPool = testPool();
+  try { await disabledPool.query('UPDATE "user" SET active=false'); } finally { await disabledPool.end(); }
+  await page.goto('/'); await expect(page).toHaveURL('/login');
+});
+
+test('session storage outage closes financial access without exposing internal diagnostics', async ({ page }) => {
+  await login(page);
+  const pool = testPool();
+  try {
+    await pool.query('ALTER TABLE "session" RENAME TO session_outage');
+    await page.goto('/empresas/rfn-argentina');
+    await expect(page).toHaveURL('/login');
+    expect(await page.content()).not.toContain('USD 59,70');
+    await page.getByLabel('Email', { exact: true }).fill(ownerEmail);
+    await page.getByLabel('Contraseña', { exact: true }).fill(ownerPassword);
+    await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
+    await expect(page.locator('form').getByRole('alert')).toContainText('Acceso no disponible');
+    expect(await page.content()).not.toContain('session_outage');
+  } finally { await pool.query('ALTER TABLE session_outage RENAME TO "session"'); await pool.end(); }
+});

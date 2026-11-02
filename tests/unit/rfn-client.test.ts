@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { requireOwner } from '../../src/modules/identity/session';
 import {
   getRfnExpenses,
   getRfnIdentity,
   getRfnSummary,
 } from "../../src/modules/integrations/rfn/client.server";
+
+vi.mock('server-only', () => ({}));
+vi.mock('../../src/modules/identity/session', () => ({ requireOwner: vi.fn(async () => ({ user: { id: 'isolated-owner' } })) }));
 
 const range = { desde: "2026-10-01", hasta: "2026-10-31" };
 const metadata = {
@@ -13,8 +17,8 @@ const metadata = {
   version: 1,
 };
 const periodo = {
-  desde: "2026-10-01T00:00:00.000Z",
-  hasta: "2026-10-31T23:59:59.999Z",
+  desde: "2026-10-01T03:00:00.000Z",
+  hasta: "2026-11-01T02:59:59.999Z",
 };
 
 const summary = {
@@ -52,8 +56,19 @@ afterEach(() => {
 });
 
 describe("RFN read-only API client", () => {
+  it('never contacts RFN when authorization fails', async () => {
+    const fakeFetch = vi.fn();
+    vi.stubGlobal('fetch', fakeFetch);
+    vi.mocked(requireOwner).mockRejectedValueOnce(new Error('REDIRECT_LOGIN'));
+    await expect(getRfnSummary(range)).rejects.toThrow('REDIRECT_LOGIN');
+    expect(fakeFetch).not.toHaveBeenCalled();
+  });
+  it('rejects UTC day boundaries instead of silently shifting Argentine totals', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ ...summary, periodo: { desde: '2026-10-01T00:00:00.000Z', hasta: '2026-10-31T23:59:59.999Z' } })));
+    await expect(getRfnSummary(range)).rejects.toMatchObject({ code: 'PERIOD_MISMATCH' });
+  });
   it("checks identity with a private header and no shared cache", async () => {
-    const fakeFetch = vi.fn(async (_url: URL, _options: RequestInit) => json({
+    const fakeFetch = vi.fn<(url: URL, options: RequestInit) => Promise<Response>>(async () => json({
       ...metadata,
       endpoints: ["GET /api/consolidado/resumen"],
     }));
@@ -71,7 +86,7 @@ describe("RFN read-only API client", () => {
   });
 
   it("fetches the requested range and keeps amount strings intact", async () => {
-    const fakeFetch = vi.fn(async (_url: URL, _options: RequestInit) => json(summary));
+    const fakeFetch = vi.fn<(url: URL, options: RequestInit) => Promise<Response>>(async () => json(summary));
     vi.stubGlobal("fetch", fakeFetch);
 
     const result = await getRfnSummary(range);
@@ -83,7 +98,7 @@ describe("RFN read-only API client", () => {
   });
 
   it("fetches expense detail without claiming it includes purchases", async () => {
-    const fakeFetch = vi.fn(async (_url: URL, _options: RequestInit) => json({
+    const fakeFetch = vi.fn<(url: URL, options: RequestInit) => Promise<Response>>(async () => json({
       ...metadata,
       periodo,
       gastos: [{
@@ -124,22 +139,22 @@ describe("RFN read-only API client", () => {
   });
 
   it("rejects credentials errors, invalid data and a wrong business identity", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => json({ error: "No autorizado" }, 401)));
+    vi.stubGlobal("fetch", vi.fn<(url: URL, options: RequestInit) => Promise<Response>>(async () => json({ error: "No autorizado" }, 401)));
     await expect(getRfnSummary(range)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
 
-    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => json({ ...summary, moneda: "ARS" })));
+    vi.stubGlobal("fetch", vi.fn<(url: URL, options: RequestInit) => Promise<Response>>(async () => json({ ...summary, moneda: "ARS" })));
     await expect(getRfnSummary(range)).rejects.toMatchObject({
       code: "INVALID_RESPONSE",
     });
 
-    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => json({ ...summary, empresaId: "otro-negocio" })));
+    vi.stubGlobal("fetch", vi.fn<(url: URL, options: RequestInit) => Promise<Response>>(async () => json({ ...summary, empresaId: "otro-negocio" })));
     await expect(getRfnSummary(range)).rejects.toMatchObject({
       code: "SOURCE_MISMATCH",
     });
   });
 
   it("rejects inconsistent source totals and bad requested dates", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => json({
+    vi.stubGlobal("fetch", vi.fn<(url: URL, options: RequestInit) => Promise<Response>>(async () => json({
       ...summary,
       totales: { ...summary.totales, egresos: "50.30" },
     })));
@@ -152,7 +167,7 @@ describe("RFN read-only API client", () => {
   });
 
   it("does not silently accept a fallback to another month", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => json({
+    vi.stubGlobal("fetch", vi.fn<(url: URL, options: RequestInit) => Promise<Response>>(async () => json({
       ...summary,
       periodo: {
         desde: "2026-11-01T00:00:00.000Z",
@@ -165,7 +180,7 @@ describe("RFN read-only API client", () => {
   });
 
   it("reports unavailable services without treating them as zero", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => { throw new Error("timeout"); }));
+    vi.stubGlobal("fetch", vi.fn<(url: URL, options: RequestInit) => Promise<Response>>(async () => { throw new Error("timeout"); }));
     await expect(getRfnSummary(range)).rejects.toMatchObject({ code: "UNAVAILABLE" });
   });
 });

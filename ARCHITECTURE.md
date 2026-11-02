@@ -1,6 +1,6 @@
 # Arquitectura — Multi-Empresa Ferraro
 
-**Versión:** 1.0 — línea base técnica de la primera implementación (2026-11-02).
+**Versión:** 1.1 — línea base técnica de la primera implementación (2026-11-02).
 **Repositorio destino:** [Broco-Solutions/multiempresa-Ferraro](https://github.com/Broco-Solutions/multiempresa-Ferraro), rama `main`.
 **Propósito:** servir como referencia técnica estable para Codex y desarrolladores. Una tarea concreta debe respetar este documento sin ampliar su alcance por iniciativa propia.
 
@@ -37,7 +37,7 @@ Se adoptan las tecnologías ya utilizadas en Ferraro y PPF, evitando copiar depe
 
 No introducir Tailwind, shadcn/ui, Redux, Zustand, SWR, React Query ni un framework backend separado por defecto. Utilizar Next.js para las páginas y, si hiciera falta, Route Handlers mínimos propios.
 
-**No crear PostgreSQL, Prisma ni almacenamiento persistente de movimientos en Multi-Empresa inicialmente.** Los sistemas de origen ya mantienen sus bases. Revisar esa decisión solo si surge un requisito real.
+**No crear Prisma ni almacenamiento persistente de movimientos en Multi-Empresa.** Excepción solicitada para autenticación del propietario: PostgreSQL independiente y exclusivo para identidad, sesiones y controles de seguridad, mediante `pg` y el adaptador integrado de Better Auth 1.7.7. No se usa ninguna base de las empresas ni se almacenan finanzas. El aprovisionamiento y las migraciones productivas requieren autorización específica; no se ejecutan en build ni despliegue. Ver `README.md` y `docs/auth-schema.sql`.
 
 ## 3. Referencia visual y experiencia
 
@@ -101,7 +101,7 @@ Repositorios de referencia:
 - Solo consultas GET de lectura a las fuentes. Secretos y URLs privadas en variables de servidor; **nunca** en `NEXT_PUBLIC_*`, HTML, JS del navegador, logs o Git.
 - Ejemplos de nombres de configuración **del consumidor**, aún no creados: `RFN_API_BASE_URL`, `RFN_API_KEY`, `FERRARO_API_BASE_URL`, `FERRARO_API_KEY`, `PPF_API_BASE_URL` y `PPF_API_KEY`. No confundirlos con `CONSOLIDADO_API_KEY`, la variable ya utilizada dentro de RFN.
 - No trasladar información personal no requerida: clientes, vendedores, teléfonos, correos o nombres individuales en movimientos de sueldos.
-- Acceso al dashboard únicamente para el dueño inicialmente. **Mecanismo de autenticación pendiente**; no crear un login ficticio, SSO ni un sistema de usuarios complejo. No exponer datos financieros públicamente ni desplegar la integración real sin protección de acceso verificada.
+- Acceso al dashboard únicamente para el dueño inicialmente. **Autenticación del dueño:** Better Auth 1.7.7, Argon2id, un solo propietario activo, sin registro público, sesiones persistentes revocables con vencimiento absoluto de 12 horas y límite persistente compartido de cinco intentos por 60 segundos. Cookies HttpOnly, Secure en producción y SameSite=Lax. Proxy inicial más verificación real de sesión en cada página y operación financiera; sin caché de sesión ni caché financiera. Sin configuración o almacenamiento válido no se consulta RFN. No crear SSO ni un sistema de usuarios complejo. No exponer datos financieros públicamente ni desplegar la integración real sin protección de acceso verificada.
 - Consultas privadas sin caché pública: `cache: 'no-store'` o equivalente, protección antiindexación, errores sin filtrar secretos.
 - Ante 401, 403, timeout, dato inválido o caída de una empresa, **mostrar empresa afectada y estado «Consolidado incompleto»**. Nunca convertir una falla en USD 0 ni presentar la suma parcial como total completo.
 - No crear cron jobs, colas, webhooks, sincronización ni caché persistente sin una necesidad comprobada.
@@ -120,7 +120,7 @@ Antes de cada cambio Codex debe inspeccionar el código actualizado del reposito
 
 ## 9. Decisiones todavía abiertas
 
-1. Mecanismo concreto de autenticación del dueño.
+1. Aprovisionamiento autorizado del PostgreSQL exclusivo de autenticación, esquema y primer propietario (mecanismo implementado; configuración productiva pendiente).
 2. Entorno de despliegue y dominio de Multi-Empresa.
 3. Definición final de ingresos totales: cobros de clientes frente a ingresos manuales.
 4. Tratamiento de transferencias entre empresas y discrepancias entre egresos contables y pagos reales.
@@ -129,3 +129,7 @@ Antes de cada cambio Codex debe inspeccionar el código actualizado del reposito
 Estos pendientes **no bloquean la creación del esqueleto visual**, pero sí impiden afirmar que un tablero muestra totales reales y consolidados validados.
 
 **Regla para Codex:** no tratar una propuesta, un dato simulado ni una ruta futura como implementación existente. Si una tarea contradice este documento, señalarlo antes de programar y proponer el cambio mínimo.
+
+## 10. Integración RFN protegida
+
+El área privada mantiene sus URL mediante el route group `(private)`; `/login` queda fuera de AppShell. El cliente RFN existente es server-only y exige sesión antes de consultar identidad, resumen o gastos. Las respuestas deben coincidir exactamente con los límites inclusivos del calendario argentino (UTC-03), identidad y USD; no se acepta la tolerancia anterior de 12 horas. No se siguen redirecciones hacia otra URL con la clave. Los importes se verifican con BigInt en centavos. Solo RFN puede mostrarse conectado; se conserva «Consolidado incompleto» y no se publican totales de tres empresas. No se muestran conceptos libres de gastos por posible contenido personal. Compras solo agregadas; sin historial de pagos ni evolución inventados. La conexión y conciliación productivas no están verificadas.
