@@ -23,7 +23,8 @@ export type RfnErrorCode =
   | "UNAVAILABLE"
   | "INVALID_RESPONSE"
   | "SOURCE_MISMATCH"
-  | "INCONSISTENT_TOTALS";
+  | "INCONSISTENT_TOTALS"
+  | "PERIOD_MISMATCH";
 
 export class RfnIntegrationError extends Error {
   constructor(public readonly code: RfnErrorCode) {
@@ -97,6 +98,26 @@ function periodParams(period: RfnDateRange): URLSearchParams {
   });
 }
 
+/**
+ * Reject a range that RFN silently replaced with its default month.
+ * The tolerance accommodates a source configured with either UTC or AR local
+ * time; exact time-zone alignment must still be reconciled before reporting.
+ */
+function assertRequestedPeriod(received: { desde: string; hasta: string }, requested: RfnDateRange) {
+  const from = Date.parse(received.desde);
+  const to = Date.parse(received.hasta);
+  const expectedFrom = Date.parse(requested.desde + "T00:00:00.000Z");
+  const expectedTo = Date.parse(requested.hasta + "T23:59:59.999Z");
+  const tolerance = 12 * 60 * 60 * 1000;
+  if (
+    from > to ||
+    Math.abs(from - expectedFrom) > tolerance ||
+    Math.abs(to - expectedTo) > tolerance
+  ) {
+    throw new RfnIntegrationError("PERIOD_MISMATCH");
+  }
+}
+
 async function get<T extends { empresaId: string; moneda: "USD"; version: 1 }>(
   resource: "identidad" | "resumen" | "gastos",
   schema: z.ZodType<T>,
@@ -155,6 +176,7 @@ export async function getRfnIdentity(): Promise<RfnIdentity> {
  */
 export async function getRfnSummary(period: RfnDateRange): Promise<RfnSummary> {
   const summary = await get("resumen", rfnSummarySchema, periodParams(period));
+  assertRequestedPeriod(summary.periodo, period);
   try {
     assertRfnTotalsConsistent(summary.totales);
   } catch {
@@ -191,5 +213,7 @@ export async function getRfnExpenses(
     params.set("categoria", categoria);
   }
 
-  return get("gastos", rfnExpensesSchema, params);
+  const result = await get("gastos", rfnExpensesSchema, params);
+  assertRequestedPeriod(result.periodo, period);
+  return result;
 }
