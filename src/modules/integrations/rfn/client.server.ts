@@ -1,3 +1,5 @@
+import 'server-only';
+import { requireOwner } from '@/modules/identity/session';
 /**
  * Private RFN POS read-only API adapter.
  *
@@ -98,23 +100,12 @@ function periodParams(period: RfnDateRange): URLSearchParams {
   });
 }
 
-/**
- * Reject a range that RFN silently replaced with its default month.
- * The tolerance accommodates a source configured with either UTC or AR local
- * time; exact time-zone alignment must still be reconciled before reporting.
- */
+/** RFN must return inclusive business-day boundaries in Argentina (UTC-03). */
 function assertRequestedPeriod(received: { desde: string; hasta: string }, requested: RfnDateRange) {
-  const from = Date.parse(received.desde);
-  const to = Date.parse(received.hasta);
-  const expectedFrom = Date.parse(requested.desde + "T00:00:00.000Z");
-  const expectedTo = Date.parse(requested.hasta + "T23:59:59.999Z");
-  const tolerance = 12 * 60 * 60 * 1000;
-  if (
-    from > to ||
-    Math.abs(from - expectedFrom) > tolerance ||
-    Math.abs(to - expectedTo) > tolerance
-  ) {
-    throw new RfnIntegrationError("PERIOD_MISMATCH");
+  const expectedFrom = Date.parse(requested.desde + 'T00:00:00.000-03:00');
+  const expectedTo = Date.parse(requested.hasta + 'T23:59:59.999-03:00');
+  if (Date.parse(received.desde) !== expectedFrom || Date.parse(received.hasta) !== expectedTo) {
+    throw new RfnIntegrationError('PERIOD_MISMATCH');
   }
 }
 
@@ -136,6 +127,7 @@ async function get<T extends { empresaId: string; moneda: "USD"; version: 1 }>(
         "x-api-key": settings.key,
       },
       cache: "no-store",
+      redirect: "error",
       signal: AbortSignal.timeout(10_000),
     });
   } catch {
@@ -167,6 +159,7 @@ async function get<T extends { empresaId: string; moneda: "USD"; version: 1 }>(
 
 /** Can check the RFN connection without querying financial data. */
 export async function getRfnIdentity(): Promise<RfnIdentity> {
+  await requireOwner();
   return get("identidad", rfnIdentitySchema);
 }
 
@@ -175,6 +168,7 @@ export async function getRfnIdentity(): Promise<RfnIdentity> {
  * Paid salaries already belong to gastos. Do not add either a second time.
  */
 export async function getRfnSummary(period: RfnDateRange): Promise<RfnSummary> {
+  await requireOwner();
   const summary = await get("resumen", rfnSummarySchema, periodParams(period));
   assertRequestedPeriod(summary.periodo, period);
   try {
@@ -194,6 +188,7 @@ export async function getRfnExpenses(
   period: RfnDateRange,
   options: RfnExpensesOptions = {},
 ): Promise<RfnExpenses> {
+  await requireOwner();
   const params = periodParams(period);
   const pagina = options.pagina ?? 1;
   const porPagina = options.porPagina ?? 100;
@@ -215,5 +210,9 @@ export async function getRfnExpenses(
 
   const result = await get("gastos", rfnExpensesSchema, params);
   assertRequestedPeriod(result.periodo, period);
+  if (result.paginacion.pagina !== pagina || result.paginacion.porPagina !== porPagina ||
+      (options.categoria !== undefined && result.gastos.some(row => row.categoria !== options.categoria!.trim()))) {
+    throw new RfnIntegrationError('INVALID_RESPONSE');
+  }
   return result;
 }
