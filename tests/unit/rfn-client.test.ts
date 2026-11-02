@@ -151,6 +151,19 @@ describe("RFN read-only API client", () => {
       .rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
   });
 
+  it("does not silently accept a fallback to another month", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => json({
+      ...summary,
+      periodo: {
+        desde: "2026-11-01T00:00:00.000Z",
+        hasta: "2026-11-30T23:59:59.999Z",
+      },
+    })));
+    await expect(getRfnSummary(range)).rejects.toMatchObject({
+      code: "PERIOD_MISMATCH",
+    });
+  });
+
   it("reports unavailable services without treating them as zero", async () => {
     vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => { throw new Error("timeout"); }));
     await expect(getRfnSummary(range)).rejects.toMatchObject({ code: "UNAVAILABLE" });
