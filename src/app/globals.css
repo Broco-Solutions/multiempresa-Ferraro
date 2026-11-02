@@ -1,0 +1,2 @@
+@import '../design-system/tokens.css';
+*{box-sizing:border-box}html{color-scheme:light}body{margin:0;background:var(--background);color:var(--text);font-family:var(--font-sans);font-size:14px;line-height:1.5}a{color:inherit;text-decoration:none}button,select{font:inherit}h1,h2,p{margin:0}h1,h2{letter-spacing:-.035em}svg{flex-shrink:0}:focus-visible{outline:3px solid #3d8986;outline-offset:3px}select:disabled{opacity:1;color:#71807e;cursor:not-allowed}

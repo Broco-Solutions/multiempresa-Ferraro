@@ -1,0 +1,2 @@
+import { defineConfig, devices } from '@playwright/test';
+export default defineConfig({testDir:'./tests',use:{baseURL:'http://127.0.0.1:4317'},webServer:{command:'corepack pnpm dev --port 4317',url:'http://127.0.0.1:4317',reuseExistingServer:!process.env.CI,timeout:120000},projects:[{name:'desktop',use:{...devices['Desktop Chrome']}},{name:'mobile',use:{...devices['iPhone 13'],defaultBrowserType:'chromium'}}]});
