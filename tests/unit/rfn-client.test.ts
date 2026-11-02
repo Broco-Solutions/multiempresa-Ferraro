@@ -53,7 +53,7 @@ afterEach(() => {
 
 describe("RFN read-only API client", () => {
   it("checks identity with a private header and no shared cache", async () => {
-    const fakeFetch = vi.fn(async () => json({
+    const fakeFetch = vi.fn(async (_url: URL, _options: RequestInit) => json({
       ...metadata,
       endpoints: ["GET /api/consolidado/resumen"],
     }));
@@ -66,12 +66,12 @@ describe("RFN read-only API client", () => {
     const [url, options] = fakeFetch.mock.calls[0]!;
     expect(String(url)).toContain("/api/consolidado/identidad");
     expect(options.method).toBe("GET");
-    expect(options.headers["x-api-key"]).toBe("test-secret-at-least-32-characters-long");
+    expect(new Headers(options.headers).get("x-api-key")).toBe("test-secret-at-least-32-characters-long");
     expect(options.cache).toBe("no-store");
   });
 
   it("fetches the requested range and keeps amount strings intact", async () => {
-    const fakeFetch = vi.fn(async () => json(summary));
+    const fakeFetch = vi.fn(async (_url: URL, _options: RequestInit) => json(summary));
     vi.stubGlobal("fetch", fakeFetch);
 
     const result = await getRfnSummary(range);
@@ -83,7 +83,7 @@ describe("RFN read-only API client", () => {
   });
 
   it("fetches expense detail without claiming it includes purchases", async () => {
-    const fakeFetch = vi.fn(async () => json({
+    const fakeFetch = vi.fn(async (_url: URL, _options: RequestInit) => json({
       ...metadata,
       periodo,
       gastos: [{
@@ -124,22 +124,22 @@ describe("RFN read-only API client", () => {
   });
 
   it("rejects credentials errors, invalid data and a wrong business identity", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => json({ error: "No autorizado" }, 401)));
+    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => json({ error: "No autorizado" }, 401)));
     await expect(getRfnSummary(range)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
 
-    vi.stubGlobal("fetch", vi.fn(async () => json({ ...summary, moneda: "ARS" })));
+    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => json({ ...summary, moneda: "ARS" })));
     await expect(getRfnSummary(range)).rejects.toMatchObject({
       code: "INVALID_RESPONSE",
     });
 
-    vi.stubGlobal("fetch", vi.fn(async () => json({ ...summary, empresaId: "otro-negocio" })));
+    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => json({ ...summary, empresaId: "otro-negocio" })));
     await expect(getRfnSummary(range)).rejects.toMatchObject({
       code: "SOURCE_MISMATCH",
     });
   });
 
   it("rejects inconsistent source totals and bad requested dates", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => json({
+    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => json({
       ...summary,
       totales: { ...summary.totales, egresos: "50.30" },
     })));
@@ -152,7 +152,7 @@ describe("RFN read-only API client", () => {
   });
 
   it("reports unavailable services without treating them as zero", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("timeout"); }));
+    vi.stubGlobal("fetch", vi.fn(async (_url: URL, _options: RequestInit) => { throw new Error("timeout"); }));
     await expect(getRfnSummary(range)).rejects.toMatchObject({ code: "UNAVAILABLE" });
   });
 });
