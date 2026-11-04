@@ -1,5 +1,7 @@
 import { APIError, betterAuth } from 'better-auth';
-import type { Pool } from 'pg';
+import { X509Certificate } from 'node:crypto';
+import { checkServerIdentity } from 'node:tls';
+import type { Pool, PoolConfig } from 'pg';
 import { z } from 'zod';
 import { hashPassword, verifyPassword } from './password';
 
@@ -11,8 +13,29 @@ export const authEnvSchema = z.object({
   }),
   BETTER_AUTH_SECRET: z.string().min(32),
   AUTH_DATABASE_URL: z.url().refine(value => ['postgres:', 'postgresql:'].includes(new URL(value).protocol)),
+  AUTH_DATABASE_CA: z.string().min(1).refine(value => {
+    try { return new X509Certificate(value).ca; } catch { return false; }
+  }, 'A valid CA certificate is required for PostgreSQL TLS.'),
 });
 export type AuthConfig = z.infer<typeof authEnvSchema>;
+
+/** Build one verified TLS configuration for both runtime authentication and owner bootstrap. */
+export function authDatabasePoolOptions(config: Pick<AuthConfig, 'AUTH_DATABASE_URL' | 'AUTH_DATABASE_CA'>): Pick<PoolConfig, 'connectionString' | 'ssl'> {
+  const url = new URL(config.AUTH_DATABASE_URL);
+  // node-postgres otherwise lets URI SSL flags replace the explicit certificate configuration.
+  for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert']) url.searchParams.delete(key);
+  return {
+    connectionString: url.toString(),
+    ssl: {
+      ca: config.AUTH_DATABASE_CA,
+      rejectUnauthorized: true,
+      // pg sets TLS servername to the TCP Proxy host. Validate the certificate
+      // against Railway's internal service identity instead.
+      checkServerIdentity: (_proxyHost, certificate) => checkServerIdentity('postgres.railway.internal', certificate),
+    },
+  };
+}
+
 export const bootstrapOwnerEnvSchema = authEnvSchema.extend({
   BOOTSTRAP_OWNER_EMAIL: z.string().trim().pipe(z.email()).transform(value => value.toLowerCase()),
   BOOTSTRAP_OWNER_NAME: z.string().trim().min(2),
@@ -39,7 +62,7 @@ export async function isPersistedOwner(database: Pool, userId: string): Promise<
   return result.rowCount === 1;
 }
 
-export function createAuth(database: Pool, config: AuthConfig) {
+export function createAuth(database: Pool, config: Omit<AuthConfig, 'AUTH_DATABASE_CA'>) {
   return betterAuth({
     appName: 'Multi-Empresa Ferraro',
     baseURL: config.BETTER_AUTH_URL,

@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
-import { bootstrapOwnerEnvSchema } from '../src/infrastructure/auth/config';
+import { authDatabasePoolOptions, bootstrapOwnerEnvSchema } from '../src/infrastructure/auth/config';
 import { hashPassword } from '../src/infrastructure/auth/password';
 const result = bootstrapOwnerEnvSchema.safeParse(process.env);
 if (!result.success) { console.error('Configuración de alta incompleta o contraseña inválida (12–128 caracteres).'); process.exit(1); }
 const config = result.data;
-const pool = new Pool({ connectionString: config.AUTH_DATABASE_URL, connectionTimeoutMillis: 5000 });
+const pool = new Pool({ ...authDatabasePoolOptions(config), connectionTimeoutMillis: 5000 });
 try {
   const passwordHash = await hashPassword(config.BOOTSTRAP_OWNER_PASSWORD);
   const client = await pool.connect();
