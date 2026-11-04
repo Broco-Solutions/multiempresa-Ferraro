@@ -1,14 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAuth } from '../../src/infrastructure/auth/config';
+import { createAuth, isPersistedOwner } from '../../src/infrastructure/auth/config';
 import { hashPassword } from '../../src/infrastructure/auth/password';
 import { ownerEmail, ownerPassword, testPool, testSecret } from '../fixtures/auth';
 
 // No silent fallback to a production DB. See README for the isolated Docker command.
 describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)('persistent owner authentication (PostgreSQL)', () => {
   const pool = process.env.AUTH_TEST_DATABASE_URL ? testPool() : undefined!;
-  const config = { AUTH_DATABASE_URL: process.env.AUTH_TEST_DATABASE_URL!, AUTH_OWNER_EMAIL: ownerEmail, BETTER_AUTH_URL: 'http://localhost:4317', BETTER_AUTH_SECRET: testSecret };
+  const config = { AUTH_DATABASE_URL: process.env.AUTH_TEST_DATABASE_URL!, BETTER_AUTH_URL: 'http://localhost:4317', BETTER_AUTH_SECRET: testSecret };
   let auth: ReturnType<typeof createAuth>;
   const id = randomUUID();
   function request(path: string, body?: unknown, cookie?: string, origin = config.BETTER_AUTH_URL) {
@@ -74,8 +74,15 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)('persistent owner authentic
     expect(await (await auth.handler(request('/get-session', undefined, expired))).json()).toBeNull();
   });
   it('refuses disabled users and additional owners at database level', async () => {
+    expect(await isPersistedOwner(pool, id)).toBe(true);
     await pool.query('UPDATE "user" SET active=false');
     expect((await login()).status).toBe(401);
+    expect(await isPersistedOwner(pool, id)).toBe(false);
     await expect(pool.query('INSERT INTO "user" (id,name,email,"emailVerified",active) VALUES ($1,$2,$3,true,true)', [randomUUID(), 'Other', 'other@example.test'])).rejects.toThrow();
+  });
+  it('fails closed if the single-owner index is absent', async () => {
+    await pool.query('DROP INDEX single_owner');
+    expect(await isPersistedOwner(pool, id)).toBe(false);
+    await pool.query('CREATE UNIQUE INDEX single_owner ON "user" ((true))');
   });
 });

@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { testDatabaseUrl, ownerEmail, testSecret } from './auth';
+import { testDatabaseUrl, testSecret } from './auth';
 const metadata = { empresaId: 'rfn-argentina', empresaNombre: 'RFN Argentina', moneda: 'USD', version: 1 };
 const server = createServer((req, res) => {
   const url = new URL(req.url!, 'http://127.0.0.1:4318');
@@ -19,7 +19,7 @@ const server = createServer((req, res) => {
   res.end(JSON.stringify({ ...metadata, periodo, gastos: [{ id: `fixture-${pagina}`, fecha: periodo.desde, concepto: 'PERSONAL_NAME_MUST_NOT_LEAK', categoria: url.searchParams.get('categoria') || 'Sueldos', medioPago: 'Transferencia', importe: '30.10' }], totalDelFiltro: '60.20', paginacion: { total: 26, pagina, porPagina: 25, totalPaginas: 2, hayMas: pagina === 1 } }));
 });
 server.listen(4318, '127.0.0.1');
-const child = spawn('pnpm', ['dev', '--port', '4317', '--hostname', '127.0.0.1'], { stdio: 'inherit', env: { ...process.env, AUTH_DATABASE_URL: testDatabaseUrl(), AUTH_OWNER_EMAIL: ownerEmail, BETTER_AUTH_SECRET: testSecret, BETTER_AUTH_URL: 'http://127.0.0.1:4317', RFN_API_BASE_URL: 'http://127.0.0.1:4318/', RFN_API_KEY: 'isolated-rfn-key-at-least-32-characters-long', RFN_EXPECTED_COMPANY_ID: 'rfn-argentina' } });
+const child = spawn('pnpm', ['dev', '--port', '4317', '--hostname', '127.0.0.1'], { stdio: 'inherit', env: { ...process.env, AUTH_DATABASE_URL: testDatabaseUrl(), BETTER_AUTH_SECRET: testSecret, BETTER_AUTH_URL: 'http://127.0.0.1:4317', RFN_API_BASE_URL: 'http://127.0.0.1:4318/', RFN_API_KEY: 'isolated-rfn-key-at-least-32-characters-long', RFN_EXPECTED_COMPANY_ID: 'rfn-argentina' } });
 function stop() { child.kill('SIGTERM'); server.close(); }
 process.on('SIGTERM', stop); process.on('SIGINT', stop);
 child.on('exit', code => { server.close(); process.exit(code ?? 0); });

@@ -1,4 +1,4 @@
-import { getAuth } from '@/infrastructure/auth/server';
+import { getAuth, isOwnerAccount } from '@/infrastructure/auth/server';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +13,7 @@ async function handle(request: Request) {
     response.headers.set('Cache-Control', 'private, no-store');
     if (path === '/api/auth/get-session' && response.ok) {
       const current = await response.clone().json();
-      if (current && (!current.user?.active || current.user.email !== process.env.AUTH_OWNER_EMAIL?.toLowerCase())) {
+      if (current && (!current.user?.active || !await isOwnerAccount(current.user.id))) {
         return Response.json(null, { headers: { 'Cache-Control': 'private, no-store' } });
       }
     }

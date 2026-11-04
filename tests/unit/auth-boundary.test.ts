@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
-const { getAuth, redirect } = vi.hoisted(() => ({ getAuth: vi.fn(), redirect: vi.fn(() => { throw new Error('REDIRECT_LOGIN'); }) }));
-vi.mock('../../src/infrastructure/auth/server', () => ({ getAuth }));
+const { getAuth, isOwnerAccount, redirect } = vi.hoisted(() => ({ getAuth: vi.fn(), isOwnerAccount: vi.fn(), redirect: vi.fn(() => { throw new Error('REDIRECT_LOGIN'); }) }));
+vi.mock('../../src/infrastructure/auth/server', () => ({ getAuth, isOwnerAccount }));
 vi.mock('next/headers', () => ({ headers: async () => new Headers() }));
 vi.mock('next/navigation', () => ({ redirect }));
 import { GET, POST } from '../../src/app/api/auth/[...all]/route';
 import { getOwnerSession, requireOwner } from '../../src/modules/identity/session';
-import { authEnvSchema } from '../../src/infrastructure/auth/config';
-beforeEach(() => { getAuth.mockReset(); redirect.mockClear(); });
+import { authEnvSchema, bootstrapOwnerEnvSchema } from '../../src/infrastructure/auth/config';
+beforeEach(() => { getAuth.mockReset(); isOwnerAccount.mockReset(); redirect.mockClear(); });
 describe('closed authorization boundary', () => {
   it('fails closed without configuration or when the session store fails', async () => {
     expect(authEnvSchema.safeParse({}).success).toBe(false);
@@ -29,7 +29,18 @@ describe('closed authorization boundary', () => {
     getAuth.mockReturnValue({ handler: async () => Response.json({ message: 'private SQL trace' }, { status: 500 }) });
     const response = await POST(new Request('https://app.example.com/api/auth/sign-out', { method: 'POST' }));
     expect(await response.text()).not.toContain('SQL');
-    getAuth.mockReturnValue({ handler: async () => Response.json({ user: { email: 'other@example.test', active: false } }) });
+    getAuth.mockReturnValue({ handler: async () => Response.json({ user: { id: 'owner-id', active: false } }) });
     expect(await (await GET(new Request('https://app.example.com/api/auth/get-session'))).json()).toBeNull();
+  });
+  it('does not require an owner email environment variable and checks persisted ownership', async () => {
+    const applicationConfig = { BETTER_AUTH_URL: 'https://app.example.test', BETTER_AUTH_SECRET: 'x'.repeat(32), AUTH_DATABASE_URL: 'postgresql://u:p@localhost/db' };
+    expect(authEnvSchema.safeParse(applicationConfig).success).toBe(true);
+    expect(bootstrapOwnerEnvSchema.safeParse({ ...applicationConfig, BOOTSTRAP_OWNER_EMAIL: ' Owner@Example.test ', BOOTSTRAP_OWNER_NAME: ' Propietario ', BOOTSTRAP_OWNER_PASSWORD: 'isolated-owner-password' }).data?.BOOTSTRAP_OWNER_EMAIL).toBe('owner@example.test');
+    expect(bootstrapOwnerEnvSchema.safeParse({ ...applicationConfig, BOOTSTRAP_OWNER_EMAIL: 'invalid', BOOTSTRAP_OWNER_NAME: 'Propietario', BOOTSTRAP_OWNER_PASSWORD: 'isolated-owner-password' }).success).toBe(false);
+    getAuth.mockReturnValue({ api: { getSession: async () => ({ user: { id: 'persisted-id', active: true }, session: { expiresAt: new Date(Date.now() + 60000) } }) } });
+    isOwnerAccount.mockResolvedValue(false);
+    expect(await getOwnerSession()).toBeNull();
+    isOwnerAccount.mockResolvedValue(true);
+    expect((await getOwnerSession())?.user.id).toBe('persisted-id');
   });
 });

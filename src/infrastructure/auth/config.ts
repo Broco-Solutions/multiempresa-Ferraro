@@ -11,9 +11,33 @@ export const authEnvSchema = z.object({
   }),
   BETTER_AUTH_SECRET: z.string().min(32),
   AUTH_DATABASE_URL: z.url().refine(value => ['postgres:', 'postgresql:'].includes(new URL(value).protocol)),
-  AUTH_OWNER_EMAIL: z.email().transform(value => value.toLowerCase()),
 });
 export type AuthConfig = z.infer<typeof authEnvSchema>;
+export const bootstrapOwnerEnvSchema = authEnvSchema.extend({
+  BOOTSTRAP_OWNER_EMAIL: z.string().trim().pipe(z.email()).transform(value => value.toLowerCase()),
+  BOOTSTRAP_OWNER_NAME: z.string().trim().min(2),
+  BOOTSTRAP_OWNER_PASSWORD: z.string().min(12).max(128),
+});
+
+/** Require the reviewed one-owner index as well as exactly one active persisted account. */
+export async function isPersistedOwner(database: Pool, userId: string): Promise<boolean> {
+  const result = await database.query(`
+    SELECT u.id
+    FROM "user" u
+    WHERE u.id = $1 AND u.active = true
+      AND (SELECT count(*) FROM "user") = 1
+      AND EXISTS (
+        SELECT 1 FROM pg_index i
+        JOIN pg_class idx ON idx.oid = i.indexrelid
+        JOIN pg_class tbl ON tbl.oid = i.indrelid
+        JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+        WHERE idx.relname = 'single_owner' AND tbl.relname = 'user'
+          AND ns.nspname = current_schema() AND i.indisunique AND i.indisvalid
+          AND pg_get_expr(i.indexprs, i.indrelid) = 'true'
+      )
+  `, [userId]);
+  return result.rowCount === 1;
+}
 
 export function createAuth(database: Pool, config: AuthConfig) {
   return betterAuth({
@@ -42,9 +66,7 @@ export function createAuth(database: Pool, config: AuthConfig) {
     },
     rateLimit: { enabled: true, storage: 'database', customRules: { '/sign-in/email': { window: 60, max: 5 } } },
     databaseHooks: { session: { create: { before: async session => {
-      const result = await database.query('SELECT email, active FROM "user" WHERE id = $1', [session.userId]);
-      const owner = result.rows[0];
-      if (!owner?.active || owner.email !== config.AUTH_OWNER_EMAIL) {
+      if (!await isPersistedOwner(database, session.userId)) {
         throw new APIError('UNAUTHORIZED', { message: 'No fue posible iniciar sesión.' });
       }
       return { data: session };
