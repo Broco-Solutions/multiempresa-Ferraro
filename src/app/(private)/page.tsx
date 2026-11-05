@@ -1,3 +1,5 @@
+import { loadFerraroReceipts, loadPpfReceipts } from '@/modules/integrations/customer-receipts/client.server';
+import { CustomerReceiptsPanel } from '@/components/patterns/customer-receipts';
 import { requireOwner } from '@/modules/identity/session';
 import { PageHeader, CompanyCards, styles } from '@/components/patterns/page';
 import { IncompleteNotice, PeriodForm, RfnSummaryPanel, InvalidFilters } from '@/components/patterns/rfn-finance';
@@ -7,6 +9,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
   await requireOwner();
   let period;
   try { period = readPeriod(await searchParams); } catch { return <InvalidFilters/>; }
-  const result = await loadRfnSummary(period);
-  return <div className={styles.page}><PageHeader title="Resumen financiero" description="Consulta privada en USD. Información individual de las fuentes disponibles."/><IncompleteNotice/><PeriodForm period={period}/><RfnSummaryPanel result={result} period={period}/><section><div className={styles.sectionHead}><h2>Resumen por empresa</h2></div><CompanyCards rfnStatus={result.ok ? 'Conectada' : result.message}/></section></div>;
+  const [result, ferraro, ppf] = await Promise.all([loadRfnSummary(period), loadFerraroReceipts(period), loadPpfReceipts(period)]);
+  return <div className={styles.page}><PageHeader title="Resumen financiero" description="Consulta privada en USD. Información individual de las fuentes disponibles."/><IncompleteNotice/><PeriodForm period={period}/><RfnSummaryPanel result={result} period={period}/><CustomerReceiptsPanel name="Ferraro Detail" result={ferraro}/><CustomerReceiptsPanel name="PPF House" result={ppf}/><section><div className={styles.sectionHead}><h2>Resumen por empresa</h2></div><CompanyCards sourceStatuses={{ 'ferraro-detail': ferraro.ok ? 'Conectada' : ferraro.message, 'ppf-house': ppf.ok ? 'Conectada' : ppf.message }} rfnStatus={result.ok ? 'Conectada' : result.message}/></section></div>;
 }

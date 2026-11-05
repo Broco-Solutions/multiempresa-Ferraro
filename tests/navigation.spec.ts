@@ -46,7 +46,7 @@ test('private summary, honest pending sources, exact amounts, filtering and pagi
   for (const [name,id] of [['Ferraro Detail','ferraro-detail'], ['PPF House','ppf-house'], ['RFN Argentina','rfn-argentina']] as const) {
     await page.goto(`/empresas/${id}`); await expect(page.getByRole('heading', { name, exact: true }).first()).toBeVisible();
     if (id === 'rfn-argentina') await expect(page.getByText('USD 10,20', { exact: true })).toBeVisible();
-    else await expect(page.getByText('Pendiente de conexión').first()).toBeVisible();
+    else await expect(page.getByText('Pendiente de configurar conexión.').first()).toBeVisible();
   }
   await page.goto('/gastos');
   await expect(page.getByRole('table')).toBeVisible();
