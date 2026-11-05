@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { rootCertificates } from 'node:tls';
 vi.mock('server-only', () => ({}));
 const { getAuth, isOwnerAccount, redirect } = vi.hoisted(() => ({ getAuth: vi.fn(), isOwnerAccount: vi.fn(), redirect: vi.fn(() => { throw new Error('REDIRECT_LOGIN'); }) }));
 vi.mock('../../src/infrastructure/auth/server', () => ({ getAuth, isOwnerAccount }));
@@ -33,8 +34,11 @@ describe('closed authorization boundary', () => {
     expect(await (await GET(new Request('https://app.example.com/api/auth/get-session'))).json()).toBeNull();
   });
   it('does not require an owner email environment variable and checks persisted ownership', async () => {
-    const applicationConfig = { BETTER_AUTH_URL: 'https://app.example.test', BETTER_AUTH_SECRET: 'x'.repeat(32), AUTH_DATABASE_URL: 'postgresql://u:p@localhost/db' };
+    // Public CA from Node's trust store; no production certificate or credentials.
+    const applicationConfig = { BETTER_AUTH_URL: 'https://app.example.test', BETTER_AUTH_SECRET: 'x'.repeat(32), AUTH_DATABASE_URL: 'postgresql://u:p@localhost/db', AUTH_DATABASE_CA: rootCertificates[0]! };
     expect(authEnvSchema.safeParse(applicationConfig).success).toBe(true);
+    expect(authEnvSchema.safeParse({ ...applicationConfig, AUTH_DATABASE_CA: undefined }).success).toBe(false);
+    expect(authEnvSchema.safeParse({ ...applicationConfig, AUTH_DATABASE_CA: 'invalid-certificate' }).success).toBe(false);
     expect(bootstrapOwnerEnvSchema.safeParse({ ...applicationConfig, BOOTSTRAP_OWNER_EMAIL: ' Owner@Example.test ', BOOTSTRAP_OWNER_NAME: ' Propietario ', BOOTSTRAP_OWNER_PASSWORD: 'isolated-owner-password' }).data?.BOOTSTRAP_OWNER_EMAIL).toBe('owner@example.test');
     expect(bootstrapOwnerEnvSchema.safeParse({ ...applicationConfig, BOOTSTRAP_OWNER_EMAIL: 'invalid', BOOTSTRAP_OWNER_NAME: 'Propietario', BOOTSTRAP_OWNER_PASSWORD: 'isolated-owner-password' }).success).toBe(false);
     getAuth.mockReturnValue({ api: { getSession: async () => ({ user: { id: 'persisted-id', active: true }, session: { expiresAt: new Date(Date.now() + 60000) } }) } });
