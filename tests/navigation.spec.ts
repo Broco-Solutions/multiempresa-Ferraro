@@ -96,3 +96,34 @@ test('session storage outage closes financial access without exposing internal d
     expect(await page.content()).not.toContain('session_outage');
   } finally { await pool.query('ALTER TABLE session_outage RENAME TO "session"'); await pool.end(); }
 });
+
+test('executive presets update dates, retain manual ranges and preserve monthly navigation', async ({ page }) => {
+  await login(page);
+  const presets = page.getByRole('navigation', { name: 'Filtros rápidos' });
+  await expect(presets.getByRole('link', { name: 'Este mes', exact: true })).toHaveAttribute('aria-current', 'true');
+  for (const name of ['Este mes', 'Mes anterior', 'Últimos 3 meses', 'Últimos 6 meses']) {
+    const link = presets.getByRole('link', { name, exact: true });
+    const target = new URL((await link.getAttribute('href'))!, 'http://127.0.0.1:4317');
+    await link.click();
+    await expect(page).toHaveURL(target.toString());
+    await expect(link).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByLabel('Desde', { exact: true })).toHaveValue(target.searchParams.get('desde')!);
+    await expect(page.getByLabel('Hasta', { exact: true })).toHaveValue(target.searchParams.get('hasta')!);
+  }
+  await expect(page.getByRole('heading', { name: 'Comparación con el período anterior', exact: true })).toBeVisible();
+  await expect(page.getByText('Comparación consolidada incompleta', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Participación de las empresas', exact: true })).toContainText('Participación no disponible');
+  await expect(page.getByRole('region', { name: 'Comparación mensual', exact: true }).getByLabel('Métrica')).toBeVisible();
+  await page.getByLabel('Desde', { exact: true }).fill('2024-02-29');
+  await page.getByLabel('Hasta', { exact: true }).fill('2024-03-02');
+  await page.getByRole('button', { name: 'Consultar', exact: true }).click();
+  await expect(page).toHaveURL(/desde=2024-02-29&hasta=2024-03-02/);
+  await expect(page.getByText(/Rango personalizado/)).toBeVisible();
+  await expect(presets.locator('[aria-current]')).toHaveCount(0);
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  }
+  await page.goto('/?desde=2026-02-30&hasta=2026-03-01');
+  await expect(page.getByRole('alert')).toContainText('Período o filtros inválidos');
+});
