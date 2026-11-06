@@ -147,3 +147,38 @@ Inicio utiliza por defecto el primer día del mes hasta hoy en Argentina; las ot
 La comparación anterior carga una sola vez `loadFinancialSummaries()` para las tres empresas en un Server Component asíncrono bajo Suspense independiente. Este mes compara el mismo tramo del mes anterior, limitado a sus días reales y marcado no equivalente si es más corto; Mes anterior compara meses completos. Los demás rangos comparan el tramo inmediatamente anterior de igual cantidad inclusiva de días. Diferencias y porcentajes usan BigInt en centavos; porcentajes con un decimal, redondeo de mitades alejándose de cero, sin porcentaje convencional con base no positiva o períodos no equivalentes. Se exige cobertura completa de cobros, egresos y saldo en las tres empresas en ambos períodos; de otro modo se identifican fuentes faltantes sin publicar variación global.
 
 La participación usa exclusivamente los cobros actuales ya validados, sin consultas adicionales. Barras CSS horizontales en orden Ferraro, PPF, RFN y colores fijos. Exige tres cobros no negativos y total positivo; de otro modo conserva importes conocidos y explica la indisponibilidad sin barras ni porcentajes. Reparto de restos mayores en décimas porcentuales, desempate por orden de empresa, para sumar exactamente 100,0 %. El gráfico mensual, adaptadores, seguridad y semántica financiera existentes permanecen vigentes.
+
+
+### Carga progresiva y consultas por solicitud (2026-11-06)
+
+Inicio valida la sesión real y los filtros antes de presentar encabezado y controles. El contenido financiero se resuelve en un Server Component asíncrono bajo Suspense con clave `desde:hasta`; muestra «Cargando información financiera…» con `role="status"` y `aria-busy`, sin importes de ejemplo. Una vez listos los resúmenes actuales, el gráfico y la comparación anterior cargan bajo límites Suspense independientes: ninguno bloquea los KPIs ni al otro. Los fallos de fuente mantienen los resultados parciales existentes; los errores de autorización se propagan.
+
+Orden de Inicio, después del encabezado y filtros: **Resumen consolidado → Comparación mensual → Comparación con el período anterior → Participación de las empresas → Resumen por empresa → Navegación financiera**. Se conservan todas las métricas, aclaraciones, seis meses y controles del gráfico.
+
+`(private)/loading.tsx` utiliza la carga nativa de App Router dentro del layout protegido y también exige sesión antes de mostrar su contenido. Los cambios de parámetros en la misma ruta tienen su propio Suspense con clave de período. El formulario manual de Inicio usaba GET con recarga completa: ahora utiliza `next/form` para conservar el layout durante la navegación, con `prefetch={false}`; los filtros rápidos también conservan `prefetch={false}`. No se agregan consultas especulativas por hover ni componentes cliente propios.
+
+Los resúmenes se memoizan mediante `cache()` de React exclusivamente durante el render del servidor, con argumentos primitivos `empresaId`, `desde`, `hasta`. La API pública vuelve a exigir `requireOwner()` y validar el período antes de acceder al resultado memoizado. Se comparten promesas y resultados con estados parciales o `null`, sin reintentos inmediatos de fallos. Las identidades validadas de Ferraro, PPF y RFN se reutilizan durante ese mismo render, incluyendo rechazos. Cada respuesta financiera sigue validándose individualmente (empresa, versión, USD, fechas e importes); se mantienen HTTPS, claves privadas, GET, `no-store`, redirecciones rechazadas y timeout de 10 segundos. No hay persistencia ni reutilización entre solicitudes HTTP o sesiones; fuera de un contexto RSC apto no se presupone deduplicación. Se mantienen los tres trabajadores históricos, sus seis meses secuenciales y cobros/egresos paralelos por mes.
+
+Mediciones antes (`9104502`) y después, con `fetch` controlado, tres fuentes configuradas y respuestas válidas en un render RSC real (`tests/unit/dashboard-performance.test.ts`), sin credenciales productivas:
+
+| Escenario / solicitudes HTTP | Identidad antes → después | Resumen antes → después | Egresos antes → después | Total antes → después | Reducción total |
+| --- | --- | --- | --- | --- | --- |
+| Inicio parcial, 01–06/11/2026 | 24 → 3 | 24 → 24 | 16 → 16 | 64 → 43 | 21 |
+| Inicio mes anterior completo, octubre 2026 | 21 → 3 | 21 → 18 | 14 → 12 | 56 → 33 | 23 |
+| Ingresos, solicitud nueva posterior a Inicio | 3 → 3 | 3 → 3 | 0 → 0 | 6 → 6 | 0 |
+| Gastos, solicitud nueva posterior a Inicio, todas las empresas | 1 → 1 | 1 → 1 | 2 → 2 | 4 → 4 | 0 |
+
+En octubre se reutilizaba explícitamente el mes actual del resumen en el gráfico (tres resultados); ahora también se reutilizan los tres resúmenes de septiembre que coinciden con la comparación anterior. En el rango parcial no coinciden los períodos y no se omite ninguno. Inicio parcial seguido de Ingresos suma 70 → 49 HTTP; seguido de Gastos, 68 → 47. Dos objetos equivalentes para Ferraro ejecutan 6 → 3 HTTP en un mismo render; un render nuevo vuelve a ejecutar las tres consultas. La prueba también verifica identidades de períodos diferentes, fallos sin reintento y autorización rechazada sin consultar fuentes.
+
+Las pruebas de navegador de componentes y estados de carga cubren 1440, 768 y 390 px, sin desbordamiento horizontal. La suite completa de navegación con login y revocación exige `AUTH_TEST_DATABASE_URL` en un PostgreSQL local aislado; no estaba configurado durante esta optimización y no se creó ninguna base. Sus casos quedan disponibles en `tests/navigation.spec.ts`. La conciliación y la latencia productivas continúan sin verificarse.
+
+Tiempos controlados de emisión RSC (una ejecución local de cada versión, latencia artificial de 20 ms por HTTP, autorización y componentes de presentación aislados en el arnés; no son tiempos productivos ni mediciones de pintura del navegador):
+
+| Hito de Inicio parcial | Antes | Después |
+| --- | --- | --- |
+| Encabezado y filtros | 56 ms | 4 ms |
+| Estado de carga propio de Inicio | No existía | 4 ms |
+| KPIs principales | 57 ms | 60 ms |
+| Datos del gráfico histórico emitidos | 322 ms | 209 ms |
+
+Con un resumen histórico demorado artificialmente a 250 ms, los KPIs se emitieron a los 67 ms, la comparación anterior a los 102 ms y el gráfico a los 446 ms. Al demorar la comparación anterior a 250 ms, el gráfico se emitió a los 212 ms y la comparación a los 333 ms. Los tiempos varían con la carga del equipo; las aserciones automatizadas comprueban orden de resolución e independencia, además de cantidades exactas de HTTP. La aparición visual durante la navegación real queda pendiente del entorno E2E autenticado.

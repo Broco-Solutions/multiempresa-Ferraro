@@ -132,3 +132,12 @@ it('keeps company pages, real connection states and expense breakdowns consisten
     }
   } finally { await browser.close(); }
 });
+
+it('validates equivalent period objects and rejects invalid ranges before querying sources', async () => {
+  await expect(loadCompanySummary('ferraro-detail', { desde: '2026-02-30', hasta: '2026-03-01' })).rejects.toThrow();
+  expect(fetcher).not.toHaveBeenCalled();
+  const first = await loadCompanySummary('ferraro-detail', period);
+  const second = await loadCompanySummary('ferraro-detail', { ...period });
+  expect(second).toEqual(first);
+  // This isolated call does not assert cache behavior; dashboard-performance uses RSC.
+});

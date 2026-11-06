@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import { requireOwner } from '@/modules/identity/session';
 /**
  * Private RFN POS read-only API adapter.
@@ -157,10 +158,13 @@ async function get<T extends { empresaId: string; moneda: "USD"; version: 1 }>(
   return result.data;
 }
 
+// Request-scoped only; rejected identity checks are also reused in this render.
+const identityForRequest = cache(() => get("identidad", rfnIdentitySchema));
+
 /** Can check the RFN connection without querying financial data. */
 export async function getRfnIdentity(): Promise<RfnIdentity> {
   await requireOwner();
-  return get("identidad", rfnIdentitySchema);
+  return identityForRequest();
 }
 
 /**

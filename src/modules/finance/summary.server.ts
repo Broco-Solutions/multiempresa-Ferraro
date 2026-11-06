@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import { companies } from '@/config/companies';
 import { requireOwner } from '@/modules/identity/session';
 import { loadCustomerReceipts, loadCustomerExpenses, type Period } from '@/modules/integrations/customer-receipts/client.server';
@@ -27,6 +28,13 @@ export const netExplanation = 'Saldo neto = cobros netos de clientes − egresos
 export async function loadCompanySummary(empresaId: CompanyId, periodo: Period): Promise<FinancialCompanySummary> {
   await requireOwner();
   readPeriod(periodo);
+  return companySummaryForRequest(empresaId, periodo.desde, periodo.hasta);
+}
+
+// React scopes this memoization to one server render, including failures/nulls.
+// Primitive dates let equivalent period objects share the same in-flight result.
+const companySummaryForRequest = cache(async (empresaId: CompanyId, desde: string, hasta: string): Promise<FinancialCompanySummary> => {
+  const periodo = { desde, hasta };
   const base: FinancialCompanySummary = {
     empresaId, nombre: companies.find(company => company.id === empresaId)!.name, periodo,
     estado: 'no_disponible', cobros: null, egresos: null, saldoNeto: null,
@@ -53,7 +61,7 @@ export async function loadCompanySummary(empresaId: CompanyId, periodo: Period):
     otrosGastos: expenses.ok ? expenses.expenses.totales.gastosManuales : null,
     mensaje: [!receipts.ok ? `Cobros: ${receipts.message}` : null, !expenses.ok ? `Egresos: ${expenses.message}` : null].filter(Boolean).join(' ') || null,
   };
-}
+});
 export async function loadFinancialSummaries(period: Period) {
   await requireOwner();
   return Promise.all(companies.map(company => loadCompanySummary(company.id, period)));

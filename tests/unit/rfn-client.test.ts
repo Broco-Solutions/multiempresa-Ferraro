@@ -63,6 +63,13 @@ describe("RFN read-only API client", () => {
     await expect(getRfnSummary(range)).rejects.toThrow('REDIRECT_LOGIN');
     expect(fakeFetch).not.toHaveBeenCalled();
   });
+  it('authenticates identity access before the request memoization boundary', async () => {
+    const fakeFetch = vi.fn();
+    vi.stubGlobal('fetch', fakeFetch);
+    vi.mocked(requireOwner).mockRejectedValueOnce(new Error('REDIRECT'));
+    await expect(getRfnIdentity()).rejects.toThrow('REDIRECT');
+    expect(fakeFetch).not.toHaveBeenCalled();
+  });
   it('rejects UTC day boundaries instead of silently shifting Argentine totals', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ ...summary, periodo: { desde: '2026-10-01T00:00:00.000Z', hasta: '2026-10-31T23:59:59.999Z' } })));
     await expect(getRfnSummary(range)).rejects.toMatchObject({ code: 'PERIOD_MISMATCH' });

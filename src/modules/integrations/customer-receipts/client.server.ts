@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import { z } from 'zod';
 import { requireOwner } from '@/modules/identity/session';
 import { usdToCents } from '@/modules/integrations/rfn/money';
@@ -7,6 +8,15 @@ export type Period = { desde: string; hasta: string };
 const identity = z.object({ version: z.literal(1), empresaId: z.string(), moneda: z.literal('USD') }).strict();
 const summary = identity.extend({ periodo: z.object({ desde: z.iso.datetime(), hasta: z.iso.datetime() }).strict(), cobros: z.string().regex(/^-?(0|[1-9]\d*)\.\d{2}$/), movimientos: z.number().int().nonnegative() });
 export type Result = { ok: true; cobros: string; movimientos: number } | { ok: false; message: string };
+// Configuration is checked on every entry; identity and failures live only in
+// React's current server request. Financial payloads are always validated below.
+const identityForRequest = cache(async (source: Source, base: string, key: string) => {
+  const response = await fetch(new URL('/api/consolidado/identidad', base), { method: 'GET', headers: { Accept: 'application/json', 'x-api-key': key }, cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(10000) });
+  if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) throw new Error('Identidad no disponible.');
+  const who = identity.parse(await response.json());
+  if (who.empresaId !== source) throw new Error('Identidad incompatible.');
+  return who;
+});
 export async function loadCustomerReceipts(source: Source, period: Period): Promise<Result> {
   await requireOwner();
   try {
@@ -30,7 +40,7 @@ export async function loadCustomerReceipts(source: Source, period: Period): Prom
       if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('Respuesta incompatible.');
       return response.json();
     }
-    const who = identity.parse(await get('identidad'));
+    const who = await identityForRequest(source, url.origin, key);
     const data = summary.parse(await get('resumen'));
     if (who.empresaId !== source || data.empresaId !== source) throw new Error('Identidad incompatible.');
     if (Date.parse(data.periodo.desde) !== Date.parse(period.desde + 'T00:00:00.000-03:00') || Date.parse(data.periodo.hasta) !== Date.parse(period.hasta + 'T23:59:59.999-03:00')) throw new Error('Período incompatible.');

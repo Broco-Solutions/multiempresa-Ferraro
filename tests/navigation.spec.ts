@@ -127,3 +127,34 @@ test('executive presets update dates, retain manual ranges and preserve monthly 
   await page.goto('/?desde=2026-02-30&hasta=2026-03-01');
   await expect(page.getByRole('alert')).toContainText('Período o filtros inválidos');
 });
+
+test('dashboard preserves financial order through presets and shows streamed loading feedback', async ({ page }) => {
+  await login(page);
+  const response = await page.request.get('/?desde=2026-11-01&hasta=2026-11-06');
+  const html = await response.text();
+  expect(html).toContain('Cargando información financiera');
+  expect(html).toContain('aria-busy="true"');
+  await page.evaluate(() => { (window as Window & { layoutMarker?: string }).layoutMarker = 'preserved'; });
+  for (const name of ['Mes anterior', 'Este mes']) {
+    await page.getByRole('navigation', { name: 'Filtros rápidos' }).getByRole('link', { name, exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Comparación mensual', exact: true }).getByLabel('Métrica')).toBeVisible();
+    const positions = await page.evaluate(() => {
+      const labels = ['Resumen consolidado', 'Comparación mensual', 'Comparación con el período anterior', 'Participación de las empresas'];
+      const nodes = labels.map(label => document.querySelector(`section[aria-label="${label}"]`)!);
+      nodes.push([...document.querySelectorAll('section')].find(node => node.querySelector('h2')?.textContent === 'Resumen por empresa')!);
+      nodes.push(document.querySelector('nav[aria-label="Secciones financieras"]')!);
+      return nodes.map(node => node.getBoundingClientRect().top + window.scrollY);
+    });
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  }
+  await page.getByLabel('Desde', { exact: true }).fill('2026-10-01');
+  await page.getByLabel('Hasta', { exact: true }).fill('2026-10-31');
+  await page.getByRole('button', { name: 'Consultar', exact: true }).click();
+  await expect(page).toHaveURL(/desde=2026-10-01&hasta=2026-10-31/);
+  expect(await page.evaluate(() => (window as Window & { layoutMarker?: string }).layoutMarker)).toBe('preserved');
+  for (const name of ['Ingresos', 'Gastos']) {
+    await page.getByRole('navigation', { name: 'Secciones financieras' }).getByRole('link', { name, exact: true }).click();
+    await expect(page.getByRole('heading', { name: name === 'Gastos' ? 'Gastos y egresos' : name, exact: true })).toBeVisible();
+    await page.goto('/');
+  }
+});

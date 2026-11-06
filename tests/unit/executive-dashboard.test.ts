@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 vi.mock('server-only', () => ({}));
+vi.mock('next/form', () => ({ default: ({ children, action, className }: { children?: ReactNode; action?: string; className?: string }) => createElement('form', { action, className }, children) }));
 vi.mock('@/modules/identity/session', () => ({ requireOwner: vi.fn() }));
 vi.mock('@/modules/finance/summary.server', async importOriginal => ({
   ...await importOriginal<typeof import('@/modules/finance/summary.server')>(),
@@ -18,6 +19,7 @@ import { centsToUsd, usdToCents } from '@/modules/integrations/rfn/money';
 import { loadFinancialSummaries, type FinancialCompanySummary } from '@/modules/finance/summary.server';
 import { requireOwner } from '@/modules/identity/session';
 import Home from '@/app/(private)/page';
+import Loading from '@/app/(private)/loading';
 import { CompanyParticipation, PreviousComparison } from '@/components/patterns/executive-insights';
 import styles from '@/components/patterns/page.module.css';
 const now = new Date('2026-11-06T15:00:00Z');
@@ -139,21 +141,50 @@ it('rejects invalid periods before API calls and maintains the owner boundary', 
   await expect(Home({ searchParams: Promise.resolve({}) })).rejects.toThrow('REDIRECT');
   expect(loadFinancialSummaries).not.toHaveBeenCalled();
 });
-it('loads current once, defers previous to Suspense, and recovers comparison failure with current KPIs intact', async () => {
+it('streams controls and a keyed fallback before current data, then keeps comparisons independent', async () => {
   const home = await Home({ searchParams: Promise.resolve({}) });
+  expect(loadFinancialSummaries).not.toHaveBeenCalled();
+  const shell = renderToStaticMarkup(home);
+  expect(shell).toContain('Resumen financiero');
+  expect(shell).toContain('Cargando información financiera…');
+  expect(shell).toContain('aria-busy="true"');
+  expect(shell).not.toContain('USD 0,00');
+  expect(shell).not.toContain('USD 100,00');
+  // Static markup starts the async child but cannot await it; resolve it separately.
+  vi.mocked(loadFinancialSummaries).mockClear();
+  const dashboard = findComponent(home, 'FinancialDashboard')!;
+  const content = await (dashboard.type as (props: unknown) => Promise<ReactNode>)(dashboard.props);
   expect(loadFinancialSummaries).toHaveBeenCalledExactlyOnceWith(period);
-  const component = findComponent(home, 'ExecutivePreviousComparison')!;
+  const component = findComponent(content, 'ExecutivePreviousComparison')!;
   vi.mocked(loadFinancialSummaries).mockResolvedValueOnce(summaries(['10.00', '20.00', '30.00']));
   const comparison = renderToStaticMarkup(await resolve(component));
   expect(loadFinancialSummaries).toHaveBeenCalledTimes(2);
   expect(loadFinancialSummaries).toHaveBeenLastCalledWith({ desde: '2026-10-01', hasta: '2026-10-06' });
   expect(comparison).toContain('USD 40,00'); expect(comparison).toContain('66,7 %');
-  vi.mocked(loadFinancialSummaries).mockRejectedValueOnce(new Error('PRIVATE_DIAGNOSTIC'));
+  // Source errors are represented by adapter results, rather than catch-all redirects.
+  vi.mocked(loadFinancialSummaries).mockResolvedValueOnce([]);
   const failure = renderToStaticMarkup(await resolve(component));
-  expect(failure).toContain('Comparación consolidada incompleta'); expect(failure).not.toContain('PRIVATE_DIAGNOSTIC');
+  expect(failure).toContain('Comparación consolidada incompleta');
   expect(failure).not.toContain('USD 0,00');
-  const html = renderToStaticMarkup(home);
+  vi.mocked(requireOwner).mockRejectedValueOnce(new Error('REDIRECT'));
+  await expect(resolve(component)).rejects.toThrow('REDIRECT');
+  vi.mocked(loadFinancialSummaries).mockRejectedValueOnce(new Error('REDIRECT_FROM_SERVICE'));
+  await expect(resolve(component)).rejects.toThrow('REDIRECT_FROM_SERVICE');
+  const html = renderToStaticMarkup(content);
   expect(html).toContain('USD 100,00'); expect(html).toContain('Calculando comparación anterior…');
+  const labels = ['Resumen consolidado', 'Comparación mensual', 'Comparación con el período anterior', 'Participación de las empresas', 'Resumen por empresa', 'Secciones financieras'];
+  const positions = labels.map(label => html.indexOf(label));
+  expect(positions.every(position => position >= 0)).toBe(true);
+  expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  const other = await Home({ searchParams: Promise.resolve({ desde: '2026-10-01', hasta: '2026-10-31' }) });
+  expect(findComponent(other, 'FinancialDashboard')!.props).toMatchObject({ period: { desde: '2026-10-01', hasta: '2026-10-31' } });
+});
+it('authenticates the route loading state and never shows financial placeholders', async () => {
+  const html = renderToStaticMarkup(await Loading());
+  expect(html).toContain('role="status"'); expect(html).toContain('aria-busy="true"');
+  expect(html).toContain('Cargando información financiera…'); expect(html).not.toContain('USD');
+  vi.mocked(requireOwner).mockRejectedValueOnce(new Error('REDIRECT'));
+  await expect(Loading()).rejects.toThrow('REDIRECT');
 });
 it('renders accessible filters, proportional CSS bars and exact comparisons at 1440, 768 and 390 px', async () => {
   vi.useRealTimers();
@@ -168,6 +199,14 @@ it('renders accessible filters, proportional CSS bars and exact comparisons at 1
       const body = renderToStaticMarkup(await resolve(await Home({ searchParams: Promise.resolve(params) })));
       await route.fulfill({ contentType: 'text/html', body: `<meta charset="utf-8"><style>${tokens}*{box-sizing:border-box}body{margin:0;padding:20px}h1,h2,p{margin:0}${css}</style>${body}` });
     });
+    const loading = renderToStaticMarkup(await Loading());
+    for (const width of [1440, 768, 390]) {
+      await tab.setViewportSize({ width, height: 1000 });
+      await tab.setContent(`<style>${tokens}*{box-sizing:border-box}body{margin:0;padding:20px}${css}</style>${loading}`);
+      expect(await tab.getByRole('status').isVisible()).toBe(true);
+      expect(await tab.locator('[aria-busy=true]').count()).toBe(1);
+      expect(await tab.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
     await tab.goto('http://executive.test/');
     for (const width of [1440, 768, 390]) {
       await tab.setViewportSize({ width, height: 1000 });

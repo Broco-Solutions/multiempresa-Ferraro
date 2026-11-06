@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 vi.mock('@/modules/identity/session', () => ({ requireOwner: vi.fn() }));
+import { requireOwner } from '@/modules/identity/session';
 import { loadCustomerReceipts } from '@/modules/integrations/customer-receipts/client.server';
 const period = { desde:'2026-10-01', hasta:'2026-10-31' };
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -22,3 +23,15 @@ it('handles network failures without exposing details', async () => { setup(); v
 
 it('does not fetch when credentials are absent', async () => { const f=setup(); vi.stubEnv('FERRARO_API_KEY',''); expect((await loadCustomerReceipts('ferraro-detail',period)).ok).toBe(false); expect(f).not.toHaveBeenCalled(); });
 it('handles timeouts as unavailable', async () => { setup(); vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new DOMException('timeout','TimeoutError'))); expect((await loadCustomerReceipts('ferraro-detail',period)).ok).toBe(false); });
+
+it('propagates owner authorization failures before consulting identity or financial data', async () => {
+ const f = setup();
+ vi.mocked(requireOwner).mockRejectedValueOnce(new Error('REDIRECT'));
+ await expect(loadCustomerReceipts('ferraro-detail', period)).rejects.toThrow('REDIRECT');
+ expect(f).not.toHaveBeenCalled();
+});
+it('rejects an incompatible identity before requesting a financial response', async () => {
+ const f = setup('ppf-house');
+ expect((await loadCustomerReceipts('ferraro-detail', period)).ok).toBe(false);
+ expect(f).toHaveBeenCalledTimes(1);
+});
