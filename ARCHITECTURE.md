@@ -58,7 +58,7 @@ No introducir Tailwind, shadcn/ui, Redux, Zustand, SWR, React Query ni un framew
 4. Calcular importes con exactitud y mostrar datos agregados y detalles mediante vistas de solo lectura.
 5. Las visualizaciones interactivas son componentes cliente pequeños; no duplicar consultas en el navegador ni enviar secretos al cliente.
 
-Organización **propuesta, todavía no implementada** (ajustar solo si el código inicial lo requiere):
+Organización implementada:
 
 - `src/app/`: rutas del dashboard y páginas de detalle.
 - `src/components/` y `src/design-system/`: componentes y estilos reutilizables.
@@ -71,9 +71,15 @@ No crear carpetas vacías ni arquitectura ceremonial.
 
 ## 5. Integraciones existentes y faltantes
 
-**RFN POS — implementado:** API autenticada por `x-api-key`, con GET `/api/consolidado/identidad`, `/resumen`, `/gastos` y `/ventas`. Los importes monetarios viajan como strings en USD. `/resumen` devuelve cobros, gastos, compras, egresos y resultado neto; `/gastos` lista solo gastos, **no compras**; `/ventas` lista ventas y su cobrado acumulado, **no pagos individuales con fecha**. La evolución mensual existe internamente pero no se expone aún por esa API.
+**RFN POS — implementado:** API autenticada por `x-api-key`, con GET `/api/consolidado/identidad`, `/resumen`, `/gastos` y `/ventas`. Los importes monetarios viajan como strings en USD. `/resumen` devuelve cobros, gastos, compras, egresos y resultado neto; `/gastos` lista solo gastos, **no compras**; `/ventas` lista ventas y su cobrado acumulado, **no pagos individuales con fecha**. La comparación mensual se obtiene consultando `/resumen` por cada rango calendario; no requiere un endpoint histórico nuevo.
 
-**Ferraro Detail y PPF House — implementado internamente:** ledger `FinancialEntry` con `INFLOW`, `OUTFLOW` y tipos `CUSTOMER_PAYMENT`, `CUSTOMER_REFUND`, `PURCHASE`, `MANUAL_INCOME`, `MANUAL_EXPENSE`, `SALARY_PAYMENT` y `REVERSAL`. `listFinancialEntries` y las métricas del dashboard existen como servicios internos. **No hay API de consolidación pública/authenticated para Multi-Empresa todavía**. Reutilizar la misma lógica al diseñar endpoints de solo lectura, sin duplicar servicios o modelos.
+**Ferraro Detail y PPF House — APIs implementadas:** GET `/api/consolidado/identidad`, `/resumen` y `/egresos`, autenticadas por `x-api-key`. `/resumen` informa cobros netos de clientes, devoluciones y reversiones, excluyendo ingresos manuales. `/egresos` informa totales de compras, gastos manuales, sueldos pagados (`SALARY_PAYMENT`) y egresos, incluyendo compensaciones por reversión; movimientos paginados. Los adaptadores existentes validan identidad, USD, período argentino, consistencia monetaria y paginación. El ledger de origen conserva `INFLOW`, `OUTFLOW`, `CUSTOMER_PAYMENT`, `CUSTOMER_REFUND`, `PURCHASE`, `MANUAL_INCOME`, `MANUAL_EXPENSE`, `SALARY_PAYMENT` y `REVERSAL`.
+
+**Presentación normalizada:** `src/modules/finance/summary.server.ts` entrega por empresa cobros, egresos, saldo neto, compras, sueldos y otros gastos, con estados completo, parcial o no disponible. Ferraro/PPF conservan cobros si falla egresos y viceversa; el saldo exige ambos. RFN utiliza su resultado neto validado; sueldos separados son `null` porque ya están incluidos en gastos operativos. Inicio y fichas usan el mismo componente. Empresas verifica datos financieros del mes argentino actual.
+
+**Consolidado:** sumar exclusivamente strings validados mediante BigInt en centavos. Solo es completo con las tres empresas; ante fallos se indica «Consolidado incompleto», empresas faltantes y «Subtotal de empresas disponibles», incluyendo únicamente empresas con cobros, egresos y saldo válidos. Sin empresas completas no hay importe de subtotal. Saldo neto = cobros netos de clientes − egresos registrados; no representa ganancia ni saldo bancario conciliado. Ingresos manuales excluidos y transferencias sin deduplicación automática.
+
+**Comparación mensual:** barras agrupadas con Recharts 3.10.1 en componente cliente aislado, seis meses calendario hasta el mes de `hasta` (acumulado disponible del mes en curso), independientes del rango parcial del resumen. Series fijas Ferraro, PPF y RFN; selector local de cobros, egresos y saldo. Carga server-only en Server Component asíncrono y Suspense. Máximo tres empresas concurrentes; seis meses secuenciales por empresa, cobros/egresos del mismo mes en paralelo. Reutilizar el resumen ya consultado si coincide el rango mensual, incluso ante fallo; sin reintentos inmediatos, historiales completos ni páginas adicionales. Valores ausentes son `null`, nunca cero. Tooltip y tabla accesible conservan strings exactos; `number` se usa solo para coordenadas. Sin caché persistente.
 
 Ningún adaptador debe inventar un endpoint ni simular que una fuente devuelve información inexistente. Para nuevos endpoints en las aplicaciones de origen, elaborar cambios mínimos y obtener autorización antes de modificar esos repositorios. No usar las APIs de una empresa para modificar sus datos.
 
@@ -124,7 +130,7 @@ Antes de cada cambio Codex debe inspeccionar el código actualizado del reposito
 2. Entorno de despliegue y dominio de Multi-Empresa.
 3. Definición final de ingresos totales: cobros de clientes frente a ingresos manuales.
 4. Tratamiento de transferencias entre empresas y discrepancias entre egresos contables y pagos reales.
-5. Extensión mínima de los endpoints faltantes para la vista de detalle e histórico.
+5. Extensión mínima de los endpoints faltantes para detalles todavía no expuestos, como pagos individuales de RFN; la comparación mensual usa resúmenes por rango existentes.
 
 Estos pendientes **no bloquean la creación del esqueleto visual**, pero sí impiden afirmar que un tablero muestra totales reales y consolidados validados.
 
@@ -132,4 +138,4 @@ Estos pendientes **no bloquean la creación del esqueleto visual**, pero sí imp
 
 ## 10. Integración RFN protegida
 
-El área privada mantiene sus URL mediante el route group `(private)`; `/login` queda fuera de AppShell. El cliente RFN existente es server-only y exige sesión antes de consultar identidad, resumen o gastos. Las respuestas deben coincidir exactamente con los límites inclusivos del calendario argentino (UTC-03), identidad y USD; no se acepta la tolerancia anterior de 12 horas. No se siguen redirecciones hacia otra URL con la clave. Los importes se verifican con BigInt en centavos. Solo RFN puede mostrarse conectado; se conserva «Consolidado incompleto» y no se publican totales de tres empresas. No se muestran conceptos libres de gastos por posible contenido personal. Compras solo agregadas; sin historial de pagos ni evolución inventados. La conexión y conciliación productivas no están verificadas.
+El área privada mantiene sus URL mediante el route group `(private)`; `/login` queda fuera de AppShell. El cliente RFN existente es server-only y exige sesión antes de consultar identidad, resumen o gastos. Las respuestas deben coincidir exactamente con los límites inclusivos del calendario argentino (UTC-03), identidad y USD; no se acepta la tolerancia anterior de 12 horas. No se siguen redirecciones hacia otra URL con la clave. Los importes se verifican con BigInt en centavos. Cada empresa solo se muestra conectada cuando sus indicadores financieros requeridos están validados; los totales de las tres empresas se publican únicamente con cobertura completa. Ante fallos se identifica el consolidado incompleto y el subtotal disponible. No se muestran conceptos libres de gastos por posible contenido personal. Compras solo agregadas; sin historial de pagos ni evolución inventados; la comparación mensual utiliza exclusivamente resúmenes reales por rango. La conexión y conciliación productivas no están verificadas.

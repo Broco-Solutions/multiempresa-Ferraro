@@ -65,10 +65,10 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       <h2>Desglose por empresa</h2>
       {([['Ferraro Detail', ferraro], ['PPF House', ppf]] as const).map(([name, result]) => <div className={styles.expenseBreakdown} key={name}>
         <div className={styles.panelHead}><h3>{name}</h3><span className={styles.badge}>{expenseStatus(result)}</span></div>
-        {result.ok ? <dl className={styles.expenseTotals}>{([['Compras', 'compras'], ['Gastos manuales', 'gastosManuales'], ['Sueldos pagados', 'sueldosPagados'], ['Total de egresos', 'egresos']] as const).map(([label, key]) => <div key={key}><dt>{label}</dt><dd>{formatUsd(result.expenses.totales[key])}</dd></div>)}</dl> : <p role="status">{result.message}</p>}
+        {result.ok ? <dl className={styles.expenseTotals}>{([['Compras', 'compras'], ['Sueldos pagados', 'sueldosPagados'], ['Otros gastos · Gastos manuales', 'gastosManuales'], ['Egresos totales', 'egresos']] as const).map(([label, key]) => <div key={key}><dt>{label}</dt><dd>{formatUsd(result.expenses.totales[key])}</dd></div>)}</dl> : <p role="status">{result.message}</p>}
       </div>)}
       <div className={styles.expenseBreakdown}><div className={styles.panelHead}><h3>RFN Argentina</h3><span className={styles.badge}>{sources[2]!.status}</span></div>
-        {rfn.ok ? <dl className={styles.expenseTotals}>{([['Gastos operativos', 'gastos'], ['Compras', 'compras'], ['Egresos totales', 'egresos']] as const).map(([label, key]) => <div key={key}><dt>{label}</dt><dd>{formatUsd(rfn.summary.totales[key])}</dd></div>)}</dl> : <p role="status">{rfn.message}</p>}
+        {rfn.ok ? <dl className={styles.expenseTotals}>{([['Compras', 'compras'], ['Sueldos pagados', null], ['Otros gastos · Gastos operativos', 'gastos'], ['Egresos totales', 'egresos']] as const).map(([label, key]) => <div key={label}><dt>{label}</dt><dd>{key === null ? 'Incluidos en gastos operativos' : formatUsd(rfn.summary.totales[key])}</dd></div>)}</dl> : <p role="status">{rfn.message}</p>}
       </div>
       <p className={styles.footnote}>Los sueldos pagados ya están incluidos en los totales de Ferraro y PPF. En RFN, los sueldos forman parte de los gastos operativos. Las compras de RFN corresponden a mercadería recibida según la regla de RFN; no necesariamente equivalen a pagos bancarios confirmados. El conjunto representa egresos registrados según las reglas de cada fuente, no ganancia ni caja bancaria conciliada. No se compensan transferencias entre empresas sin identificar.</p>
     </section>

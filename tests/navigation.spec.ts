@@ -41,11 +41,11 @@ test('login has accessible controls, generic failures and rejects signup and for
 test('private summary, honest pending sources, exact amounts, filtering and pagination', async ({ page }) => {
   await login(page);
   await expect(page.getByText('Consolidado incompleto', { exact: true })).toBeVisible();
-  await expect(page.getByText('USD 59,70', { exact: true })).toBeVisible();
-  await expect(page.getByText('USD 40,30', { exact: true })).toBeVisible();
+  await expect(page.getByText('USD 59,70', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('USD 40,30', { exact: true }).first()).toBeVisible();
   for (const [name,id] of [['Ferraro Detail','ferraro-detail'], ['PPF House','ppf-house'], ['RFN Argentina','rfn-argentina']] as const) {
     await page.goto(`/empresas/${id}`); await expect(page.getByRole('heading', { name, exact: true }).first()).toBeVisible();
-    if (id === 'rfn-argentina') await expect(page.getByText('USD 10,20', { exact: true })).toBeVisible();
+    if (id === 'rfn-argentina') await expect(page.getByText('USD 10,20', { exact: true }).first()).toBeVisible();
     else await expect(page.getByText('Pendiente de configurar conexión.').first()).toBeVisible();
   }
   await page.goto('/gastos');
@@ -61,7 +61,7 @@ test('private summary, honest pending sources, exact amounts, filtering and pagi
   for (const path of ['/ingresos', '/movimientos']) { await page.goto(path); await expect(page.getByText('Sin datos disponibles')).toBeVisible(); }
   const response = await page.goto('/empresas/desconocida'); expect(response?.status()).toBe(404);
   await page.goto('/?desde=2026-01-01&hasta=2026-01-31');
-  await expect(page.getByRole('status')).toContainText('rechazado');
+  await expect(page.getByRole('status').filter({ hasText: 'rechazado' }).first()).toContainText('rechazado');
   await expect(page.getByText('USD 0,00')).toHaveCount(0);
 });
 test('logout revokes the server session; expired, revoked and disabled accounts lose access', async ({ page, context, request }) => {
