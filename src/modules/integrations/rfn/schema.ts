@@ -80,3 +80,23 @@ export const rfnExpensesSchema = rfnCompanySchema.extend({
 export type RfnIdentity = z.infer<typeof rfnIdentitySchema>;
 export type RfnSummary = z.infer<typeof rfnSummarySchema>;
 export type RfnExpenses = z.infer<typeof rfnExpensesSchema>;
+
+const movementPagination = z.object({
+  total: z.number().int().nonnegative().max(2147483647),
+  pagina: z.number().int().min(1).max(1000000), porPagina: z.literal(25),
+  totalPaginas: z.number().int().positive(), hayMas: z.boolean(),
+}).strict();
+const movement = z.object({
+  id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/), fecha: datetime,
+  reversion: z.literal(false), importeUsd: rfnUsdSchema,
+});
+export const rfnCollectionsSchema = rfnCompanySchema.extend({
+  periodo: rfnPeriodSchema,
+  movimientos: z.array(movement.extend({ tipo: z.enum(['SENIA', 'COBRO']) }).strict()).max(25),
+  paginacion: movementPagination,
+}).strict();
+export const rfnPurchasesSchema = rfnCompanySchema.extend({
+  periodo: rfnPeriodSchema,
+  movimientos: z.array(movement.extend({ tipo: z.literal('COMPRA_RECIBIDA') }).strict()).max(25),
+  paginacion: movementPagination,
+}).strict();

@@ -191,3 +191,62 @@ describe("RFN read-only API client", () => {
     await expect(getRfnSummary(range)).rejects.toMatchObject({ code: "UNAVAILABLE" });
   });
 });
+
+it.each(['cobros', 'compras'] as const)('validates %s detail, identity, order, pagination and security', async resource => {
+  const { getRfnMovements } = await import('../../src/modules/integrations/rfn/client.server');
+  const row = { id: 'movement-2', fecha: '2026-10-15T12:00:00.000Z', tipo: resource === 'cobros' ? 'SENIA' : 'COMPRA_RECIBIDA', reversion: false, importeUsd: '0.10' };
+  const payload = { ...metadata, periodo, movimientos: [row], paginacion: { pagina: 1, porPagina: 25, total: 1, totalPaginas: 1, hayMas: false } };
+  const f = vi.fn(async (url: URL) => json(url.pathname.endsWith('/identidad') ? { ...metadata, endpoints: [] } : payload));
+  vi.stubGlobal('fetch', f);
+  const r = await getRfnMovements(resource, range);
+  expect(r.movimientos[0]?.importeUsd).toBe('0.10');
+  expect(f.mock.calls.at(-1)![0].pathname).toBe('/api/consolidado/' + resource);
+  for (const change of [{ moneda: 'ARS' }, { version: 2 }, { empresaId: 'wrong' },
+    { movimientos: [{ ...row, importeUsd: '-1' }] }, { movimientos: [{ ...row, reversion: true }] },
+    { movimientos: [{ ...row, cliente: 'PRIVATE' }] }, { movimientos: [{ ...row, tipo: 'VENTA' }] },
+    { movimientos: [{ ...row, fecha: '2026-11-15T00:00:00Z' }] },
+    { periodo: { ...periodo, desde: '2026-10-01T00:00:00.000Z' } },
+    { paginacion: { ...payload.paginacion, total: 26 } },
+  ]) {
+    f.mockImplementation(async url => json(url.pathname.endsWith('/identidad') ? { ...metadata, endpoints: [] } : { ...payload, ...change }));
+    await expect(getRfnMovements(resource, range)).rejects.toThrow();
+  }
+  f.mockResolvedValue(json({}, 401)); await expect(getRfnMovements(resource, range)).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+  f.mockClear();
+  vi.mocked(requireOwner).mockRejectedValueOnce(new Error('LOGIN'));
+  await expect(getRfnMovements(resource, range)).rejects.toThrow('LOGIN'); expect(f).not.toHaveBeenCalled();
+});
+
+it('reconciles all controlled collection, purchase and operational expense pages with RFN summary', async () => {
+  const { getRfnMovements, assertMovementPage } = await import('../../src/modules/integrations/rfn/client.server');
+  const { usdToCents } = await import('../../src/modules/integrations/rfn/money');
+  const controlledSummary = { ...summary, totales: { ...summary.totales, cobros: '6.10', compras: '12.20', gastos: '18.30', egresos: '30.50', resultadoNeto: '-24.40' } };
+  vi.stubGlobal('fetch', vi.fn(async (url: URL) => {
+    const resource = url.pathname.split('/').at(-1);
+    if (resource === 'identidad') return json({ ...metadata, endpoints: [] });
+    if (resource === 'resumen') return json(controlledSummary);
+    const page = Number(url.searchParams.get('pagina'));
+    const rows = Array.from({ length: 61 }, (_, i) => ({ id: 'movement-' + String(100-i).padStart(3,'0'), fecha: '2026-10-15T12:00:00.000Z',
+      tipo: resource === 'cobros' ? (i % 2 ? 'COBRO' : 'SENIA') : 'COMPRA_RECIBIDA', reversion: false,
+      importeUsd: resource === 'cobros' ? '0.10' : '0.20' })).slice((page-1)*25,page*25);
+    return json({ ...metadata, periodo,
+      ...(resource === 'gastos' ? { gastos: rows.map(r => ({ id: r.id, fecha: r.fecha, concepto: 'PRIVATE', categoria: 'Sueldos', medioPago: 'PRIVATE', importe: '0.30' })), totalDelFiltro: '18.30' } : { movimientos: rows }),
+      paginacion: { pagina: page, porPagina: 25, total: 61, totalPaginas: 3, hayMas: page < 3 } });
+  }));
+  const totals = (await getRfnSummary(range)).totales;
+  for (const flow of ['cobros', 'compras', 'gastos'] as const) {
+    let amount = 0n;
+    for (let page = 1; page <= 3; page++) {
+      if (flow === 'gastos') {
+        const r = await getRfnExpenses(range, { pagina: page, porPagina: 25 });
+        const rows = r.gastos.map(row => ({ ...row, importeUsd: row.importe }));
+        assertMovementPage(rows, r.paginacion, range, page);
+        amount += rows.reduce((sum, row) => sum + usdToCents(row.importeUsd), 0n);
+      } else {
+        const r = await getRfnMovements(flow, range, page);
+        amount += r.movimientos.reduce((sum, row) => sum + usdToCents(row.importeUsd), 0n);
+      }
+    }
+    expect(amount).toBe(usdToCents(totals[flow]));
+  }
+});

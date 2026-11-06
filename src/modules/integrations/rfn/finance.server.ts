@@ -1,6 +1,6 @@
 import 'server-only';
 import { requireOwner } from '@/modules/identity/session';
-import { getRfnIdentity, getRfnSummary, getRfnExpenses, RfnIntegrationError, type RfnDateRange, type RfnExpensesOptions } from './client.server';
+import { getRfnMovements, getRfnIdentity, getRfnSummary, getRfnExpenses, RfnIntegrationError, type RfnDateRange, type RfnExpensesOptions } from './client.server';
 export function integrationMessage(error: unknown): string {
   if (!(error instanceof RfnIntegrationError)) return 'RFN Argentina no disponible. No se muestran importes.';
   const messages = {
@@ -23,5 +23,11 @@ export async function loadRfnSummary(period: RfnDateRange) {
 export async function loadRfnExpenses(period: RfnDateRange, options: RfnExpensesOptions) {
   await requireOwner();
   try { await getRfnIdentity(); return { ok: true as const, expenses: await getRfnExpenses(period, options) }; }
+  catch (error) { return { ok: false as const, message: integrationMessage(error) }; }
+}
+
+export async function loadRfnMovements(resource: 'cobros' | 'compras', period: RfnDateRange, page = 1) {
+  await requireOwner();
+  try { return { ok: true as const, data: await getRfnMovements(resource, period, page) }; }
   catch (error) { return { ok: false as const, message: integrationMessage(error) }; }
 }

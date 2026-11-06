@@ -35,3 +35,60 @@ it('rejects an incompatible identity before requesting a financial response', as
  expect((await loadCustomerReceipts('ferraro-detail', period)).ok).toBe(false);
  expect(f).toHaveBeenCalledTimes(1);
 });
+
+it.each(['ferraro-detail', 'ppf-house'] as const)('validates individual collections and financial signs for %s', async source => {
+  const { loadCustomerCollections } = await import('@/modules/integrations/customer-receipts/client.server');
+  setup(source);
+  const identity = { version: 1, empresaId: source, moneda: 'USD' };
+  const rows = ['10.00', '-2.00', '-3.00', '1.00'].map((importeUsd, i) => ({
+    id: '00000000-0000-4000-8000-' + String(4-i).padStart(12,'0'), fecha: '2026-10-15T12:00:00.000Z',
+    tipo: i % 2 ? 'CUSTOMER_REFUND' : 'CUSTOMER_PAYMENT', reversion: i > 1, importeUsd,
+  }));
+  const payload = { ...identity, periodo: { desde: '2026-10-01T03:00:00.000Z', hasta: '2026-11-01T02:59:59.999Z' }, movimientos: rows,
+    paginacion: { pagina: 1, porPagina: 25, total: 4, totalPaginas: 1, hayMas: false } };
+  const f = vi.fn(async (url: URL) => Response.json(url.pathname.endsWith('/identidad') ? identity : payload));
+  vi.stubGlobal('fetch', f);
+  expect(await loadCustomerCollections(source, period)).toMatchObject({ ok: true, collections: { movimientos: rows } });
+  expect(f.mock.calls.at(-1)![0].pathname).toBe('/api/consolidado/cobros');
+  for (const change of [ { moneda: 'ARS' }, { version: 2 }, { empresaId: 'wrong' }, { movimientos: [...rows].reverse() },
+    { movimientos: [{ ...rows[0], importeUsd: '-10.00' }, ...rows.slice(1)] },
+    { movimientos: [{ ...rows[0], cliente: 'PRIVATE' }, ...rows.slice(1)] },
+    { paginacion: { ...payload.paginacion, total: 25 } },
+    { periodo: { ...payload.periodo, desde: '2026-10-01T00:00:00.000Z' } } ]) {
+    f.mockImplementation(async url => Response.json(url.pathname.endsWith('/identidad') ? identity : { ...payload, ...change }));
+    const result = await loadCustomerCollections(source, period);
+    expect(result.ok).toBe(false); expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  }
+  f.mockClear();
+  expect((await loadCustomerCollections(source, period, 0)).ok).toBe(false); expect(f).not.toHaveBeenCalled();
+  vi.mocked(requireOwner).mockRejectedValueOnce(new Error('LOGIN'));
+  await expect(loadCustomerCollections(source, period)).rejects.toThrow('LOGIN'); expect(f).not.toHaveBeenCalled();
+});
+
+it.each(['ferraro-detail', 'ppf-house'] as const)('reconciles every controlled %s collection page with its existing summary', async source => {
+  const { loadCustomerCollections } = await import('@/modules/integrations/customer-receipts/client.server');
+  const { usdToCents } = await import('@/modules/integrations/rfn/money');
+  setup(source);
+  const identity = { version: 1, empresaId: source, moneda: 'USD' };
+  const periodo = { desde: '2026-10-01T03:00:00.000Z', hasta: '2026-11-01T02:59:59.999Z' };
+  const rows = Array.from({ length: 60 }, (_, i) => ({
+    id: '00000000-0000-4000-8000-' + String(100-i).padStart(12,'0'), fecha: '2026-10-15T12:00:00.000Z',
+    tipo: i === 57 || i === 59 ? 'CUSTOMER_REFUND' : 'CUSTOMER_PAYMENT', reversion: i >= 58,
+    importeUsd: i === 57 ? '-0.20' : i === 58 ? '-0.30' : i === 59 ? '0.40' : '0.10',
+  }));
+  vi.stubGlobal('fetch', vi.fn(async (url: URL) => {
+    if (url.pathname.endsWith('/identidad')) return Response.json(identity);
+    if (url.pathname.endsWith('/resumen')) return Response.json({ ...identity, periodo, cobros: '5.60', movimientos: 60 });
+    const n = Number(url.searchParams.get('pagina'));
+    return Response.json({ ...identity, periodo, movimientos: rows.slice((n-1)*25,n*25), paginacion: { pagina: n, porPagina: 25, total: 60, totalPaginas: 3, hayMas: n < 3 } });
+  }));
+  const summary = await loadCustomerReceipts(source, period);
+  expect(summary.ok).toBe(true);
+  let total = 0n;
+  for (let n = 1; n <= 3; n++) {
+    const r = await loadCustomerCollections(source, period, n);
+    expect(r.ok).toBe(true);
+    if (r.ok) total += r.collections.movimientos.reduce((sum, row) => sum + usdToCents(row.importeUsd), 0n);
+  }
+  if (summary.ok) expect(total).toBe(usdToCents(summary.cobros));
+});

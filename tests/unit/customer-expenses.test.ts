@@ -163,3 +163,9 @@ it('keeps filters and the summary responsive at mobile and desktop widths', asyn
     }
   } finally { await browser.close(); }
 });
+it('validates identity for the movements consumer before expense detail', async () => {
+  const guarded = vi.fn(async (url: URL) => Response.json(url.pathname.endsWith('/identidad') ? { version: 1, moneda: 'USD', empresaId: 'wrong' } : payload()));
+  vi.stubGlobal('fetch', guarded);
+  expect((await loadCustomerExpenses('ppf-house', period, 1, true)).ok).toBe(false);
+  expect(guarded).toHaveBeenCalledTimes(1);
+});

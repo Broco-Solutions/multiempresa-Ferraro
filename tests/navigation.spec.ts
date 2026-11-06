@@ -58,7 +58,8 @@ test('private summary, honest pending sources, exact amounts, filtering and pagi
   await page.getByRole('link', { name: 'Siguiente' }).click();
   await expect(page.getByText('Página 2 de 2')).toBeVisible();
   await expect(page).toHaveURL(/categoria=Sueldos/);
-  for (const path of ['/ingresos', '/movimientos']) { await page.goto(path); await expect(page.getByText('Sin datos disponibles')).toBeVisible(); }
+  await page.goto('/movimientos'); await expect(page.getByRole('heading', { name: 'Movimientos', exact: true })).toBeVisible();
+  await expect(page.getByText(/Listado incompleto/).first()).toBeVisible();
   const response = await page.goto('/empresas/desconocida'); expect(response?.status()).toBe(404);
   await page.goto('/?desde=2026-01-01&hasta=2026-01-31');
   await expect(page.getByRole('status').filter({ hasText: 'rechazado' }).first()).toContainText('rechazado');
@@ -157,4 +158,22 @@ test('dashboard preserves financial order through presets and shows streamed loa
     await expect(page.getByRole('heading', { name: name === 'Gastos' ? 'Gastos y egresos' : name, exact: true })).toBeVisible();
     await page.goto('/');
   }
+});
+
+
+test('movements filters reset the cursor and remain readable at all sizes', async ({ page }) => {
+  await login(page);
+  await page.goto('/movimientos?desde=2026-11-01&hasta=2026-11-30');
+  await page.getByLabel('Empresa', { exact: true }).selectOption('rfn-argentina');
+  await page.getByLabel('Tipo', { exact: true }).selectOption('egresos');
+  await page.getByRole('button', { name: 'Consultar', exact: true }).click();
+  await expect(page).toHaveURL(/empresa=rfn-argentina&tipo=egresos/);
+  expect(new URL(page.url()).searchParams.has('cursor')).toBe(false);
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  }
+  expect(await page.content()).not.toContain('PERSONAL_NAME_MUST_NOT_LEAK');
+  await page.goto('/movimientos?cursor=invalid');
+  await expect(page.getByRole('alert')).toContainText('filtros inválidos');
 });

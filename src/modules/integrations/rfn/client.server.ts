@@ -9,8 +9,9 @@ import { requireOwner } from '@/modules/identity/session';
  * No integration data may be shown publicly before owner authentication exists.
  */
 import { z } from "zod";
-import { assertRfnTotalsConsistent } from "./money";
+import { usdToCents, assertRfnTotalsConsistent } from "./money";
 import {
+  rfnCollectionsSchema, rfnPurchasesSchema,
   rfnExpensesSchema,
   rfnIdentitySchema,
   rfnSummarySchema,
@@ -111,7 +112,7 @@ function assertRequestedPeriod(received: { desde: string; hasta: string }, reque
 }
 
 async function get<T extends { empresaId: string; moneda: "USD"; version: 1 }>(
-  resource: "identidad" | "resumen" | "gastos",
+  resource: "identidad" | "resumen" | "gastos" | "cobros" | "compras",
   schema: z.ZodType<T>,
   params = new URLSearchParams(),
 ): Promise<T> {
@@ -186,7 +187,7 @@ export async function getRfnSummary(period: RfnDateRange): Promise<RfnSummary> {
 /**
  * RFN's /gastos lists operational expenses including salary payments.
  * It does NOT list purchased merchandise, individual customer receipts or
- * month-by-month financial history. Those require future source API endpoints.
+ * month-by-month financial history. Collections and received purchases have separate detail endpoints.
  */
 export async function getRfnExpenses(
   period: RfnDateRange,
@@ -218,5 +219,37 @@ export async function getRfnExpenses(
       (options.categoria !== undefined && result.gastos.some(row => row.categoria !== options.categoria!.trim()))) {
     throw new RfnIntegrationError('INVALID_RESPONSE');
   }
+  return result;
+}
+
+/** Validates the fixed-size, stably ordered movement contract. */
+export function assertMovementPage(
+  rows: { id: string; fecha: string; importeUsd: string }[],
+  pagination: { pagina: number; porPagina: number; total: number; totalPaginas: number; hayMas: boolean },
+  period: RfnDateRange, page: number,
+) {
+  const p = pagination;
+  const count = Math.min(25, Math.max(0, p.total - (page - 1) * 25));
+  if (!Number.isSafeInteger(p.total) || p.total > 2147483647 || p.pagina !== page || p.porPagina !== 25 ||
+      p.totalPaginas !== Math.max(1, Math.ceil(p.total / 25)) || p.hayMas !== (page < p.totalPaginas) ||
+      rows.length !== count || new Set(rows.map(row => row.id)).size !== count) throw new RfnIntegrationError('INVALID_RESPONSE');
+  const from = Date.parse(period.desde + 'T00:00:00.000-03:00'), to = Date.parse(period.hasta + 'T23:59:59.999-03:00');
+  for (const [index, row] of rows.entries()) {
+    const date = Date.parse(row.fecha), prior = rows[index - 1];
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(row.id) || !Number.isFinite(date) || date < from || date > to || usdToCents(row.importeUsd) < 0n ||
+        (prior && (date > Date.parse(prior.fecha) || (date === Date.parse(prior.fecha) && row.id > prior.id)))) throw new RfnIntegrationError('INVALID_RESPONSE');
+  }
+}
+export async function getRfnMovements(resource: 'cobros' | 'compras', period: RfnDateRange, page = 1) {
+  await requireOwner();
+  const params = periodParams(period);
+  if (!Number.isSafeInteger(page) || page < 1 || page > 1000000) throw new RfnIntegrationError('INVALID_CONFIGURATION');
+  params.set('pagina', String(page));
+  await getRfnIdentity();
+  const result = resource === 'cobros'
+    ? await get(resource, rfnCollectionsSchema, params)
+    : await get(resource, rfnPurchasesSchema, params);
+  assertRequestedPeriod(result.periodo, period);
+  assertMovementPage(result.movimientos, result.paginacion, period, page);
   return result;
 }

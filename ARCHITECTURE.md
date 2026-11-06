@@ -130,7 +130,7 @@ Antes de cada cambio Codex debe inspeccionar el código actualizado del reposito
 2. Entorno de despliegue y dominio de Multi-Empresa.
 3. Definición final de ingresos totales: cobros de clientes frente a ingresos manuales.
 4. Tratamiento de transferencias entre empresas y discrepancias entre egresos contables y pagos reales.
-5. Extensión mínima de los endpoints faltantes para detalles todavía no expuestos, como pagos individuales de RFN; la comparación mensual usa resúmenes por rango existentes.
+5. Revisión y publicación separada de los nuevos endpoints de cobros individuales y compras recibidas; contratos locales integrados en Movimientos (§12), disponibilidad productiva pendiente. La comparación mensual usa resúmenes por rango existentes.
 
 Estos pendientes **no bloquean la creación del esqueleto visual**, pero sí impiden afirmar que un tablero muestra totales reales y consolidados validados.
 
@@ -138,7 +138,7 @@ Estos pendientes **no bloquean la creación del esqueleto visual**, pero sí imp
 
 ## 10. Integración RFN protegida
 
-El área privada mantiene sus URL mediante el route group `(private)`; `/login` queda fuera de AppShell. El cliente RFN existente es server-only y exige sesión antes de consultar identidad, resumen o gastos. Las respuestas deben coincidir exactamente con los límites inclusivos del calendario argentino (UTC-03), identidad y USD; no se acepta la tolerancia anterior de 12 horas. No se siguen redirecciones hacia otra URL con la clave. Los importes se verifican con BigInt en centavos. Cada empresa solo se muestra conectada cuando sus indicadores financieros requeridos están validados; los totales de las tres empresas se publican únicamente con cobertura completa. Ante fallos se identifica el consolidado incompleto y el subtotal disponible. No se muestran conceptos libres de gastos por posible contenido personal. Compras solo agregadas; sin historial de pagos ni evolución inventados; la comparación mensual utiliza exclusivamente resúmenes reales por rango. La conexión y conciliación productivas no están verificadas.
+El área privada mantiene sus URL mediante el route group `(private)`; `/login` queda fuera de AppShell. El cliente RFN existente es server-only y exige sesión antes de consultar identidad, resumen o gastos. Las respuestas deben coincidir exactamente con los límites inclusivos del calendario argentino (UTC-03), identidad y USD; no se acepta la tolerancia anterior de 12 horas. No se siguen redirecciones hacia otra URL con la clave. Los importes se verifican con BigInt en centavos. Cada empresa solo se muestra conectada cuando sus indicadores financieros requeridos están validados; los totales de las tres empresas se publican únicamente con cobertura completa. Ante fallos se identifica el consolidado incompleto y el subtotal disponible. No se muestran conceptos libres de gastos por posible contenido personal. El detalle de compras recibidas y cobros individuales se incorpora en Movimientos mediante los contratos locales descritos en §12; sin evolución inventada; la comparación mensual utiliza exclusivamente resúmenes reales por rango. La conexión y conciliación productivas no están verificadas.
 
 ## 11. Panel ejecutivo de Inicio
 
@@ -182,3 +182,42 @@ Tiempos controlados de emisión RSC (una ejecución local de cada versión, late
 | Datos del gráfico histórico emitidos | 322 ms | 209 ms |
 
 Con un resumen histórico demorado artificialmente a 250 ms, los KPIs se emitieron a los 67 ms, la comparación anterior a los 102 ms y el gráfico a los 446 ms. Al demorar la comparación anterior a 250 ms, el gráfico se emitió a los 212 ms y la comparación a los 333 ms. Los tiempos varían con la carga del equipo; las aserciones automatizadas comprueban orden de resolución e independencia, además de cantidades exactas de HTTP. La aparición visual durante la navegación real queda pendiente del entorno E2E autenticado.
+
+
+## 12. Movimientos individuales (2026-11-06)
+
+`/movimientos` exige `requireOwner()` antes de validar filtros y consultar datos. Reutiliza diseño, períodos argentinos y resúmenes financieros existentes. Orden: encabezado, formulario GET, resumen, disponibilidad por flujo, tabla y navegación. `desde`/`hasta` predeterminan el mes argentino completo; `empresa=todas|ferraro-detail|ppf-house|rfn-argentina`, `tipo=todos|cobros|egresos`; `cursor` solo pagina. Parámetros repetidos, desconocidos, inválidos o cursores incompatibles se rechazan antes de consultar. El formulario no contiene cursor y reinicia la consulta. Resumen y listado tienen Suspense independientes, sin precarga de historiales.
+
+### Contratos revisados y disponibilidad
+
+Se revisaron los `main` remotos y las implementaciones locales de las instrucciones anteriores, sin modificar fuentes. En los `main` revisados todavía no estaban los nuevos `/cobros` y `/compras`. Los adaptadores se validan con respuestas controladas de esos contratos locales; **no se declara disponibilidad productiva** hasta revisar y desplegar cada API por separado.
+
+| Empresa | Flujo individual | Contrato |
+| --- | --- | --- |
+| Ferraro / PPF | Cobros | GET `/api/consolidado/cobros`: `movimientos` con UUID, fecha, `CUSTOMER_PAYMENT|CUSTOMER_REFUND`, `reversion`, `importeUsd` con signo financiero; páginas fijas de 25 |
+| Ferraro / PPF | Egresos | GET `/api/consolidado/egresos`: compras, gastos manuales y sueldos; importe positivo de egreso o negativo de reversión |
+| RFN | Cobros | GET `/api/consolidado/cobros`: `SENIA|COBRO`, `reversion=false`, importe USD no negativo; páginas fijas de 25 |
+| RFN | Compras | GET `/api/consolidado/compras`: `COMPRA_RECIBIDA`, `reversion=false`, importe USD no negativo; páginas fijas de 25 |
+| RFN | Gastos | GET `/api/consolidado/gastos`, `porPagina=25`: gastos operativos incluidos sueldos, sin repetirlos por otra vía |
+
+Todos usan `periodo=rango`, `desde`, `hasta` y `pagina`. Se conserva transporte GET privado con HTTPS, `no-store`, redirecciones rechazadas y timeout. La identidad se reutiliza en el render del servidor y se valida antes de consultar los nuevos detalles; Movimientos también exige esta validación para egresos de Ferraro/PPF, sin agregar solicitudes a las pantallas existentes. Cada respuesta valida empresa, versión, USD, límites inclusivos argentinos, tipos, IDs, importes, fechas, cantidad y metadatos de paginación, unicidad y orden descendente por fecha e ID. Los conceptos/categorías/medios libres de gastos RFN no se trasladan al modelo ni al HTML/RSC de Movimientos.
+
+### Semántica y resumen
+
+`FinancialMovement` conserva `empresaId`, `flujo`, `idOrigen`, `fecha`, tipo original, `direccion`, `reversion` e `importeUsd` canónico como string con signo financiero. La identidad técnica es empresa + flujo + ID, nunca el ID aislado. La dirección se determina por categoría y reversión: cobro normal positivo; devolución negativa; reversión de cobro negativa; reversión de devolución positiva. Egresos normales negativos; sus reversiones positivas. Se preserva la categoría revertida. RFN aporta señas/cobros positivos y gastos/compras recibidas negativos; no se generan movimientos desde ventas.
+
+Las compras recibidas son egresos registrados, **no confirmaciones de pagos bancarios**. Los sueldos de Ferraro/PPF aparecen una vez como `SALARY_PAYMENT`; los de RFN están incluidos en sus gastos operativos, sin una suma ni un flujo adicional. No se exponen personas ni conceptos libres. Importes y sumas exactos mediante BigInt en centavos, sin floats financieros.
+
+Los tres indicadores provienen exclusivamente de `loadCompanySummary()` o `loadFinancialSummaries()` y sus reglas de consolidación; cubren todo el período y la empresa seleccionada independientemente del tipo/listado visible. Ante fuentes faltantes se muestra «Consolidado incompleto» y exclusivamente el subtotal permitido por las reglas existentes. Nunca cero por un error. Aclaración: «El saldo neto representa cobros menos egresos registrados. No equivale a ganancia ni saldo bancario conciliado.»
+
+### Mezcla ordenada y cursor
+
+Siete flujos posibles: cobros/egresos de Ferraro y PPF, cobros/gastos/compras de RFN; se consultan solo los autorizados por los filtros. La mezcla conserva una cabeza por flujo y elige la menor según fecha efectiva descendente, empresa ascendente, flujo ascendente e ID descendente (mismo desempate de cada endpoint). Consume hasta 25 filas. Cuando se agota una página de origen, se solicita la siguiente únicamente si hace falta otra selección. Se comprueba también el orden entre páginas cargadas en la misma solicitud.
+
+El cursor versionado contiene únicamente filtros y desplazamientos consumidos por flujo. Para reanudar se calcula `pagina=floor(offset/25)+1` y se omite `offset%25` en esa página; los candidatos no consumidos se vuelven a obtener. No se avanza una página de todas las empresas simultáneamente ni se cargan historiales completos. No hay caché global ni persistencia.
+
+El token base64url lleva HMAC-SHA256 con separación de dominio usando el `BETTER_AUTH_SECRET` ya requerido por la autenticación; no crea ni cambia secretos. Firma comparada en tiempo constante, límite de 2048 caracteres, esquema estricto, versión, claves exactas de los flujos, enteros acotados y filtros idénticos; cambios invalidan el token. No contiene importes, filas, IDs personales ni credenciales. Rotar el secreto invalida los cursores anteriores.
+
+Si falla cualquier flujo requerido se indica «Listado incompleto» y su fuente «No disponible», conservando filas validadas de los demás. No se emite cursor siguiente. «Sin movimientos» se reserva para una consulta completa vacía. La disponibilidad de los detalles es independiente de la del resumen. La navegación permite Siguiente y Atrás del navegador, sin precarga especulativa.
+
+Los movimientos o sus reversiones pueden cambiar entre solicitudes. La paginación por desplazamiento no garantiza ausencia de cambios ante escrituras concurrentes; **no existe un snapshot global entre bases independientes**. Con datos estables las pruebas controladas recorren múltiples páginas por flujo sin saltos ni duplicados. La conciliación y seguridad productivas quedan pendientes del despliegue y acceso autenticado a las APIs revisadas.
