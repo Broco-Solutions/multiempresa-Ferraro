@@ -1,6 +1,12 @@
 import { requireOwner } from '@/modules/identity/session';
 import { companies } from '@/config/companies';
-import { PageHeader, styles } from '@/components/patterns/page';
+import { InfoIcon, SearchIcon, TrendingUpIcon, WalletIcon } from 'lucide-react';
+import { Notice, PageHeader, StatusBadge, layout } from '@/components/patterns/page';
+import { Donut } from '@/components/patterns/executive-insights';
+import { receiptsParticipation } from '@/modules/finance/executive-metrics';
+import { CompanyLogo } from '@/components/brand/brand';
+import { Card } from '@/components/ui/card';
+import { Input, NativeSelect, fieldLabel } from '@/components/ui/field';
 import { InvalidFilters, formatUsd } from '@/components/patterns/rfn-finance';
 import { readPeriod, argentinaTimeZone, type SearchParams } from '@/modules/integrations/rfn/period';
 import { loadFerraroReceipts, loadPpfReceipts } from '@/modules/integrations/customer-receipts/client.server';
@@ -30,27 +36,35 @@ export default async function IncomePage({ searchParams }: { searchParams: Promi
   const total = available.length ? centsToUsd(available.reduce((sum, source) => sum + usdToCents(source.total!), 0n)) : null;
   const allCompanies = company === 'todas';
 
-  return <div className={styles.page}>
-    <PageHeader title="Ingresos" description="Consultá los cobros de Ferraro Detail, PPF House y RFN Argentina."/>
-    <form className={styles.filters} method="get" key={`${period.desde}-${period.hasta}-${company}`}>
-      <label htmlFor="ingresos-desde">Desde<input id="ingresos-desde" name="desde" type="date" defaultValue={period.desde} required/></label>
-      <label htmlFor="ingresos-hasta">Hasta<input id="ingresos-hasta" name="hasta" type="date" defaultValue={period.hasta} required/></label>
-      <label htmlFor="ingresos-empresa">Empresa<select aria-label="Empresa" id="ingresos-empresa" name="empresa" defaultValue={company}><option value="todas">Todas las empresas</option>{companies.map(value => <option key={value.id} value={value.id}>{value.name}</option>)}</select></label>
-      <button type="submit">Consultar</button>
+  const participation = allCompanies ? receiptsParticipation(sources.map(source => ({ empresaId: source.id, cobros: source.total }))) : null;
+
+  return <div className={layout.page}>
+    <PageHeader title="Ingresos" description="Consultá los cobros de Ferraro Detail, PPF House y RFN Argentina." icon={TrendingUpIcon}/>
+    <form className={layout.filters} method="get" key={`${period.desde}-${period.hasta}-${company}`}>
+      <label className={fieldLabel} htmlFor="ingresos-desde">Desde<Input id="ingresos-desde" name="desde" type="date" defaultValue={period.desde} required/></label>
+      <label className={fieldLabel} htmlFor="ingresos-hasta">Hasta<Input id="ingresos-hasta" name="hasta" type="date" defaultValue={period.hasta} required/></label>
+      <label className={fieldLabel} htmlFor="ingresos-empresa">Empresa<NativeSelect aria-label="Empresa" id="ingresos-empresa" name="empresa" defaultValue={company}><option value="todas">Todas las empresas</option>{companies.map(value => <option key={value.id} value={value.id}>{value.name}</option>)}</NativeSelect></label>
+      <button className={layout.submit} type="submit"><SearchIcon className="size-4"/>Consultar</button>
     </form>
-    <section className={styles.panel} aria-label="Total de cobros del período">
-      <div className={styles.panelHead}><div><h2>{allCompanies ? 'Cobros del conjunto' : `Cobros de ${sources[0]!.name}`}</h2><p>Período consultado: {period.desde} al {period.hasta} · {argentinaTimeZone}</p></div></div>
-      {missing.length ? <div className={styles.notice} role="status"><div><strong>{allCompanies ? 'Consolidado incompleto' : 'Consulta no disponible'}</strong><p>Sin cobros validados de: {missing.map(source => source.name).join(', ')}.</p></div></div> : null}
-      <div className={styles.metric}><h3>{allCompanies ? (missing.length ? 'Subtotal de empresas disponibles' : 'Total de las tres empresas') : 'Total de cobros del período'}</h3><strong>{total === null ? 'No disponible' : formatUsd(total)}</strong></div>
-      <p className={styles.footnote}>Ferraro y PPF: cobros netos de clientes, con devoluciones y reversiones; se excluyen ingresos manuales y ventas no cobradas. RFN: cobros informados por su API financiera. {allCompanies ? 'El total incluye únicamente cobros validados. No se compensan transferencias entre empresas sin identificar.' : null}</p>
-    </section>
-    <section aria-label="Desglose por empresa">
-      <div className={styles.sectionHead}><h2>Desglose por empresa</h2></div>
-      <div className={styles.companyGrid}>{sources.map(source => <article className={`${styles.panel} ${styles.financialCard}`} key={source.id}>
-        <div className={styles.summaryHeader}><h2>{source.name}</h2><span className={styles.badge}>{source.total === null ? 'No disponible' : 'Conectada'}</span></div>
-        <dl className={styles.companyIndicators}><div className={styles.primaryIndicator}><dt>{source.id === 'rfn-argentina' ? 'Cobros informados por RFN' : 'Cobros netos de clientes'}</dt><dd>{source.total === null ? 'No disponible' : formatUsd(source.total)}</dd></div></dl>
-        {source.message ? <p role="status">{source.message}</p> : null}
-      </article>)}</div>
+    <Card as="section" className="relative grid animate-rise gap-5 overflow-hidden p-5 sm:p-7" aria-label="Total de cobros del período">
+      <span aria-hidden className="absolute inset-x-0 top-0 h-[3px] bg-primary"/>
+      <span aria-hidden className="pointer-events-none absolute -top-24 -left-24 size-72 rounded-full bg-primary/10 blur-3xl"/>
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h2 className="text-lg font-semibold tracking-tight">{allCompanies ? 'Cobros del conjunto' : `Cobros de ${sources[0]!.name}`}</h2><p className="num mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">Período consultado: {period.desde} al {period.hasta} · {argentinaTimeZone}</p></div>{!allCompanies ? <CompanyLogo id={sources[0]!.id} size="md"/> : null}</div>
+      {missing.length ? <Notice title={allCompanies ? 'Consolidado incompleto' : 'Consulta no disponible'}>Sin cobros validados de: {missing.map(source => source.name).join(', ')}.</Notice> : null}
+      <div className={`grid min-w-0 items-center gap-8 ${participation && !participation.reason ? 'md:grid-cols-[minmax(0,1fr)_auto]' : ''}`}>
+        <div className="min-w-0"><h3 className="flex items-center gap-2 text-[13px] font-medium text-muted-foreground"><WalletIcon className="size-4 text-highlight"/>{allCompanies ? (missing.length ? 'Subtotal de empresas disponibles' : 'Total de las tres empresas') : 'Total de cobros del período'}</h3><strong className="num mt-3 block text-[clamp(30px,5vw,52px)] leading-none font-semibold tracking-[-0.04em] [overflow-wrap:anywhere]">{total === null ? <span className="font-sans text-2xl text-muted-foreground">No disponible</span> : formatUsd(total)}</strong></div>
+        {participation && !participation.reason ? <div className="flex flex-wrap items-center justify-center gap-6"><Donut rows={participation.rows}/><ul className="grid gap-2.5 text-sm">{participation.rows.map(row => <li key={row.id} className="flex items-center gap-2.5"><i aria-hidden className="size-2.5 rounded-sm" style={{ background: row.color }}/><span className="font-medium">{row.short}</span><span className="num ml-auto pl-4 font-semibold">{row.percentage}</span></li>)}</ul></div> : null}
+      </div>
+      <p className={`${layout.footnote} flex gap-2 border-t pt-4`}><InfoIcon className="mt-0.5 size-3.5 shrink-0 text-highlight"/><span>Ferraro y PPF: cobros netos de clientes, con devoluciones y reversiones; se excluyen ingresos manuales y ventas no cobradas. RFN: cobros informados por su API financiera. {allCompanies ? 'El total incluye únicamente cobros validados. No se compensan transferencias entre empresas sin identificar.' : null}</span></p>
+    </Card>
+    <section aria-label="Desglose por empresa" className={layout.section}>
+      <h2 className="text-lg font-semibold tracking-tight">Desglose por empresa</h2>
+      <div className={layout.grid3}>{sources.map((source, index) => <Card as="article" className="group relative flex animate-rise flex-col gap-5 overflow-hidden p-5 sm:p-6" style={{ animationDelay: `${index * 70}ms` }} key={source.id}>
+        <span aria-hidden className="absolute inset-x-0 top-0 h-[3px]" style={{ background: source.color }}/>
+        <div className="flex items-start gap-3.5"><CompanyLogo id={source.id} size="md"/><div className="grid gap-1.5"><h2 className="text-base font-semibold tracking-tight">{source.name}</h2><StatusBadge status={source.total === null ? 'No disponible' : 'Conectada'}/></div></div>
+        <dl className="m-0 [&_dd]:m-0 [&_dt]:text-xs [&_dt]:text-muted-foreground"><div className="border-t pt-4"><dt>{source.id === 'rfn-argentina' ? 'Cobros informados por RFN' : 'Cobros netos de clientes'}</dt><dd className="num mt-2 text-[clamp(20px,2vw,26px)] font-semibold [overflow-wrap:anywhere]">{source.total === null ? <span className="font-sans text-base text-muted-foreground">No disponible</span> : formatUsd(source.total)}</dd></div></dl>
+        {source.message ? <p role="status" className="rounded-lg bg-warning-surface px-3 py-2 text-xs">{source.message}</p> : null}
+      </Card>)}</div>
     </section>
   </div>;
 }

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, isValidElement, type ReactNode, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
+import { appCss } from '../fixtures/app-css';
 vi.mock('server-only', () => ({}));
 vi.mock('next/form', () => ({ default: ({ children, action, className }: { children?: ReactNode; action?: string; className?: string }) => createElement('form', { action, className }, children) }));
 vi.mock('@/modules/identity/session', () => ({ requireOwner: vi.fn() }));
@@ -21,7 +21,6 @@ import { requireOwner } from '@/modules/identity/session';
 import Home from '@/app/(private)/page';
 import Loading from '@/app/(private)/loading';
 import { CompanyParticipation, PreviousComparison } from '@/components/patterns/executive-insights';
-import styles from '@/components/patterns/page.module.css';
 const now = new Date('2026-11-06T15:00:00Z');
 const period = { desde: '2026-11-01', hasta: '2026-11-06' };
 function summaries(receipts: (string | null)[] = ['50.00', '30.00', '20.00'], range = period): FinancialCompanySummary[] {
@@ -188,21 +187,19 @@ it('authenticates the route loading state and never shows financial placeholders
 });
 it('renders accessible filters, proportional CSS bars and exact comparisons at 1440, 768 and 390 px', async () => {
   vi.useRealTimers();
-  let css = await readFile(new URL('../../src/components/patterns/page.module.css', import.meta.url), 'utf8');
-  css = css.replace(/\.([a-zA-Z][\w-]*)/g, (match, name) => styles[name] ? '.' + styles[name] : match);
-  const tokens = await readFile(new URL('../../src/design-system/tokens.css', import.meta.url), 'utf8');
+  const css = await appCss();
   const browser = await chromium.launch({ headless: true });
   try {
     const tab = await browser.newPage();
     await tab.route('http://executive.test/**', async route => {
       const params = Object.fromEntries(new URL(route.request().url()).searchParams);
       const body = renderToStaticMarkup(await resolve(await Home({ searchParams: Promise.resolve(params) })));
-      await route.fulfill({ contentType: 'text/html', body: `<meta charset="utf-8"><style>${tokens}*{box-sizing:border-box}body{margin:0;padding:20px}h1,h2,p{margin:0}${css}</style>${body}` });
+      await route.fulfill({ contentType: 'text/html', body: `<meta charset="utf-8"><style>*{box-sizing:border-box}body{margin:0;padding:20px}h1,h2,p{margin:0}${css}</style>${body}` });
     });
     const loading = renderToStaticMarkup(await Loading());
     for (const width of [1440, 768, 390]) {
       await tab.setViewportSize({ width, height: 1000 });
-      await tab.setContent(`<style>${tokens}*{box-sizing:border-box}body{margin:0;padding:20px}${css}</style>${loading}`);
+      await tab.setContent(`<style>*{box-sizing:border-box}body{margin:0;padding:20px}${css}</style>${loading}`);
       expect(await tab.getByRole('status').isVisible()).toBe(true);
       expect(await tab.locator('[aria-busy=true]').count()).toBe(1);
       expect(await tab.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -212,7 +209,7 @@ it('renders accessible filters, proportional CSS bars and exact comparisons at 1
       await tab.setViewportSize({ width, height: 1000 });
       expect(await tab.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const section = tab.getByRole('region', { name: 'Participación de las empresas', exact: true });
-      const tracks = section.locator(`.${styles.participationTrack}`);
+      const tracks = section.locator('[data-participation-track]');
       expect(await tracks.count()).toBe(3);
       for (const [index, expected] of [0.5, 0.3, 0.2].entries()) {
         const ratio = await tracks.nth(index).evaluate(element => element.firstElementChild!.getBoundingClientRect().width / element.getBoundingClientRect().width);
@@ -239,7 +236,7 @@ it('renders accessible filters, proportional CSS bars and exact comparisons at 1
     for (const width of [1440, 768, 390]) {
       await tab.setViewportSize({ width, height: 1000 });
       const comparison = renderToStaticMarkup(createElement(PreviousComparison, { current: summaries(['-0.01', '30.00', '20.00']), previous: [], period, comparison: previousExecutivePeriod(period, now) }));
-      await tab.setContent(`<style>${tokens}*{box-sizing:border-box}body{margin:0;padding:20px}${css}</style>${invalidHtml}${comparison}`);
+      await tab.setContent(`<style>*{box-sizing:border-box}body{margin:0;padding:20px}${css}</style>${invalidHtml}${comparison}`);
       expect(await tab.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
   } finally { await browser.close(); }
