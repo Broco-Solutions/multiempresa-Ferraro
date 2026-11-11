@@ -23,10 +23,11 @@ Se adoptan las tecnologías ya utilizadas en Ferraro y PPF, evitando copiar depe
 | Framework | Next.js 16, App Router y Server Components | Ferraro y PPF (16.3.8) |
 | UI | React y React DOM 19 | Ferraro y PPF (19.3.0) |
 | Lenguaje | TypeScript 5, `strict: true`, alias `@/*` hacia `src/*` | Ferraro y PPF (5.9.3) |
-| Diseño | CSS nativo con variables semánticas, CSS Modules y layout responsive | `src/design-system/` en Ferraro y PPF |
-| Fuente | Inter, cargada mediante `next/font` | Ferraro y PPF |
-| Componentes | Primitivas propias y patrones `Page`, `PageHeader`, `DataToolbar`, etc. | Ferraro y PPF |
-| Iconos | `@phosphor-icons/react` | Ferraro y PPF (2.1.10) |
+| Diseño | Tailwind CSS 4 con tokens semánticos en `src/app/globals.css` (tema oscuro «cockpit» por defecto y claro vía `next-themes`) | Rebranding 2026-11 (ver `docs/BRAND_UI.md`) |
+| Fuente | Inter para texto y JetBrains Mono para importes, cargadas mediante `next/font` | Ferraro y PPF |
+| Componentes | shadcn/ui (Radix, `cmdk`) en `src/components/ui/`, patrones propios en `src/components/patterns/` y marca en `src/components/brand/` | Rebranding 2026-11 |
+| Iconos | `lucide-react` | Rebranding 2026-11 |
+| Animación | `motion` solo en componentes cliente de navegación y gráficos; el resto con CSS respetando `prefers-reduced-motion` | Rebranding 2026-11 |
 | Formularios complejos | `react-aria-components` solo cuando aporte accesibilidad real | Ferraro y PPF (1.22.1) |
 | Gráficos | Recharts 3 en componentes cliente aislados | RFN POS (3.10.1) |
 | Validación de datos externos | Zod 4 | Ferraro y PPF (4.6.5) |
@@ -35,7 +36,7 @@ Se adoptan las tecnologías ya utilizadas en Ferraro y PPF, evitando copiar depe
 
 **Versiones:** las cifras entre paréntesis son versiones verificadas en `main` al redactar este documento, no permiso para instalar todas las dependencias de origen. Para iniciar el repositorio usar versiones concretas compatibles y un lockfile; no actualizar de versión mayor ni agregar librerías sin necesidad demostrada.
 
-No introducir Tailwind, shadcn/ui, Redux, Zustand, SWR, React Query ni un framework backend separado por defecto. Utilizar Next.js para las páginas y, si hiciera falta, Route Handlers mínimos propios.
+Tailwind CSS 4 y shadcn/ui se adoptaron en el rebranding de 2026-11 por decisión del propietario. No introducir Redux, Zustand, SWR, React Query ni un framework backend separado por defecto. Utilizar Next.js para las páginas y, si hiciera falta, Route Handlers mínimos propios.
 
 **No crear Prisma ni almacenamiento persistente de movimientos en Multi-Empresa.** Excepción solicitada para autenticación del propietario: PostgreSQL independiente y exclusivo para identidad, sesiones y controles de seguridad, mediante `pg` y el adaptador integrado de Better Auth 1.7.7. No se usa ninguna base de las empresas ni se almacenan finanzas. El aprovisionamiento y las migraciones productivas requieren autorización específica; no se ejecutan en build ni despliegue. Ver `README.md` y `docs/auth-schema.sql`.
 
@@ -43,7 +44,8 @@ No introducir Tailwind, shadcn/ui, Redux, Zustand, SWR, React Query ni un framew
 
 - Tomar de Ferraro y PPF la **estructura visual y los patrones**: tokens CSS, jerarquía tipográfica, tablas, filtros, tarjetas, navegación, estados vacíos y comportamiento mobile.
 - Adaptar los componentes estrictamente necesarios; no clonar el monolito, sus pantallas operativas ni miles de líneas de estilos globales.
-- Crear una identidad visual sobria y neutral de Multi-Empresa; usar marcas oficiales de cada empresa cuando estén disponibles y autorizadas. No inventar logos.
+- Identidad visual basada en la marca Ferraro (negro, gris `#706F6F`, amarillo `#FFCE13`, blanco) con logos oficiales de Ferraro, PPF House y RFN Argentina en `public/brand/`. No inventar ni redibujar logos. Ver `docs/BRAND_UI.md`.
+- Los importes visibles son siempre el string exacto de `formatUsd`; los gráficos usan `number` solo como coordenada y nunca dibujan `null` como cero.
 - Diseño responsive, accesible (teclado, etiquetas, contraste y estados de carga/error), con importes legibles y fechas/períodos explícitos.
 - **Página principal liviana.** Los listados grandes y filtros avanzados pertenecen a secciones específicas.
 - Nunca colocar importes falsos como datos reales ni usar un login de demostración. Sin fuente conectada, mostrar «Sin datos» o «Pendiente de conexión», no cero.

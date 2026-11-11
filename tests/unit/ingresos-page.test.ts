@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
+import { appCss } from '../fixtures/app-css';
 vi.mock('server-only', () => ({}));
 vi.mock('@/modules/identity/session', () => ({ requireOwner: vi.fn() }));
 vi.mock('@/modules/integrations/customer-receipts/client.server', () => ({ loadFerraroReceipts: vi.fn(), loadPpfReceipts: vi.fn() }));
@@ -11,7 +11,6 @@ import { requireOwner } from '@/modules/identity/session';
 import { loadFerraroReceipts, loadPpfReceipts } from '@/modules/integrations/customer-receipts/client.server';
 import { loadRfnSummary } from '@/modules/integrations/rfn/finance.server';
 import { type SearchParams } from '@/modules/integrations/rfn/period';
-import styles from '@/components/patterns/page.module.css';
 const period = { desde: '2026-11-01', hasta: '2026-11-30' };
 const loaders = [loadFerraroReceipts, loadPpfReceipts, loadRfnSummary];
 async function render(params: SearchParams = period) {
@@ -93,16 +92,14 @@ it('requires the owner before querying financial sources', async () => {
   for (const loader of loaders) expect(loader).not.toHaveBeenCalled();
 });
 it('submits accessible filters through the browser and stays within 390, 768 and 1440 px', async () => {
-  let css = await readFile(new URL('../../src/components/patterns/page.module.css', import.meta.url), 'utf8');
-  css = css.replace(/\.([a-zA-Z][\w-]*)/g, (match, name) => styles[name] ? '.' + styles[name] : match);
-  const tokens = await readFile(new URL('../../src/design-system/tokens.css', import.meta.url), 'utf8');
+  const css = await appCss();
   const browser = await chromium.launch({ headless: true });
   try {
     const tab = await browser.newPage();
     tab.setDefaultTimeout(5000);
     await tab.route('http://ingresos.test/**', async route => {
       const params = Object.fromEntries(new URL(route.request().url()).searchParams);
-      await route.fulfill({ contentType: 'text/html', body: `<meta charset="utf-8"><style>${tokens}*{box-sizing:border-box}body{margin:0;padding:20px}${css}</style>${await render(params)}` });
+      await route.fulfill({ contentType: 'text/html', body: `<meta charset="utf-8"><style>*{box-sizing:border-box}body{margin:0;padding:20px}${css}</style>${await render(params)}` });
     });
     await tab.goto('http://ingresos.test/ingresos');
     for (const width of [390, 768, 1440]) {

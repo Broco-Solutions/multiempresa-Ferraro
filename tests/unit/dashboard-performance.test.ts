@@ -12,8 +12,11 @@ const harness = String.raw`
 import { registerHooks, createRequire } from 'node:module';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
+import { readFileSync } from 'node:fs';
 const root = process.cwd();
 const require = createRequire(root + '/package.json');
+const lucideNames = [...new Set([...readFileSync(require.resolve('lucide-react').replace(/cjs\/lucide-react\.js$/, 'esm/lucide-react.mjs'), 'utf8').matchAll(/ as (\w+)/g)].map(match => match[1]))].filter(name => name !== 'icons');
+const lucideExports = 'const ' + lucideNames.map(name => name + '=__Icon').join(',') + '; export {' + lucideNames.join(',') + '}';
 registerHooks({
   resolve(specifier, context, next) {
     if (specifier === 'react' || specifier.startsWith('react/') || specifier === 'react-dom') return { url: pathToFileURL(require.resolve(specifier)).href, shortCircuit: true };
@@ -22,6 +25,8 @@ registerHooks({
     if (specifier.includes('identity/session')) return { url: 'mock:session', shortCircuit: true };
     if (specifier.includes('patterns/comparison-chart')) return { url: 'mock:chart', shortCircuit: true };
     if (specifier.endsWith('.css')) return { url: 'mock:css', shortCircuit: true };
+    if (specifier === 'lucide-react') return { url: 'mock:lucide', shortCircuit: true };
+    if (specifier === 'next/image') return { url: 'mock:image', shortCircuit: true };
     return next(specifier, context);
   },
   load(url, context, next) {
@@ -29,6 +34,9 @@ registerHooks({
       'mock:session': 'export async function requireOwner() { if(globalThis.denied) throw Error("REDIRECT"); return {user:{id:"test"}} }',
       'mock:link': 'import {createElement} from "react"; export default function Link({children,...props}) { delete props.prefetch; return createElement("a",props,children) }',
       'mock:css': 'export default {}',
+      'mock:image': 'import {createElement} from "react"; export default function Image({unoptimized,...props}) { return createElement("img",props) }',
+      // Icons are client references in Next.js; render inert SVGs here.
+      'mock:lucide': 'import {createElement} from "react"; const __Icon = props => createElement("svg",{"aria-hidden":true,className:props.className}); ' + lucideExports + ';',
       'mock:form': 'import {createElement} from "react"; export default function Form({children,prefetch,...props}) { return createElement("form",props,children) }',
       'mock:chart': 'import {createElement} from "react"; export function ComparisonChart({months}) { return createElement("section",{"aria-label":"Comparación mensual"},"HISTORY_DONE",JSON.stringify(months)) }',
     };

@@ -97,9 +97,9 @@ it('consolidates amounts beyond safe integer precision using cents', async () =>
   expect(consolidateSummaries(summaries)).toMatchObject({ cobros: '27021597764222979.03', egresos: '0.06', saldoNeto: '27021597764222978.97' });
 });
 it('keeps company pages, real connection states and expense breakdowns consistent at all requested widths', async () => {
-  const [{ default: CompanyPage }, { default: CompaniesPage }, { default: ExpensesPage }, { readFile }, { chromium }, { default: styles }] = await Promise.all([
+  const [{ default: CompanyPage }, { default: CompaniesPage }, { default: ExpensesPage }, { chromium }, { appCss }] = await Promise.all([
     import('@/app/(private)/empresas/[empresa]/page'), import('@/app/(private)/empresas/page'), import('@/app/(private)/gastos/page'),
-    import('node:fs/promises'), import('@playwright/test'), import('@/components/patterns/page.module.css'),
+    import('@playwright/test'), import('../fixtures/app-css'),
   ]);
   const companyPages = await Promise.all(['ferraro-detail', 'ppf-house', 'rfn-argentina'].map(async empresa => renderToStaticMarkup(await CompanyPage({ params: Promise.resolve({ empresa }), searchParams: Promise.resolve(period) }))));
   for (const html of companyPages) expect([...html.matchAll(/<dt>(.*?)<\/dt>/g)].map(match => match[1])).toEqual(['Cobros', 'Egresos totales', 'Saldo neto', 'Compras', 'Sueldos pagados', 'Otros gastos']);
@@ -116,15 +116,13 @@ it('keeps company pages, real connection states and expense breakdowns consisten
     'Compras', 'Sueldos pagados', 'Otros gastos · Gastos manuales', 'Egresos totales',
     'Compras', 'Sueldos pagados', 'Otros gastos · Gastos operativos', 'Egresos totales',
   ]);
-  let css = await readFile(new URL('../../src/components/patterns/page.module.css', import.meta.url), 'utf8');
-  css = css.replace(/\.([a-zA-Z][\w-]*)/g, (match, name) => styles[name] ? '.' + styles[name] : match);
-  const tokens = await readFile(new URL('../../src/design-system/tokens.css', import.meta.url), 'utf8');
+  const css = await appCss();
   const browser = await chromium.launch({ headless: true });
   try {
     for (const width of [1440, 768, 390]) {
       const tab = await browser.newPage({ viewport: { width, height: 1000 } });
       for (const [index, html] of [...companyPages, listing, expenses].entries()) {
-        await tab.setContent(`<style>${tokens}*{box-sizing:border-box}body{margin:0;padding:20px}h1,h2,p{margin:0}${css}</style>${html}`);
+        await tab.setContent(`<style>*{box-sizing:border-box}body{margin:0;padding:20px}h1,h2,p{margin:0}${css}</style>${html}`);
         expect(await tab.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await tab.screenshot({ path: `/tmp/multiempresa-pages-${index}-${width}.png`, fullPage: true });
       }

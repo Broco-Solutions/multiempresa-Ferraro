@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
+import { appCss } from '../fixtures/app-css';
 vi.mock('server-only', () => ({}));
 vi.mock('@/modules/identity/session', () => ({ requireOwner: vi.fn() }));
 const rfn = vi.hoisted(() => ({ summary: vi.fn(), expenses: vi.fn() }));
@@ -9,7 +9,6 @@ vi.mock('@/modules/integrations/rfn/finance.server', () => ({ loadRfnSummary: rf
 import { loadCustomerExpenses, loadFerraroExpenses, loadPpfExpenses, type Source } from '@/modules/integrations/customer-receipts/client.server';
 import { requireOwner } from '@/modules/identity/session';
 import ExpensesPage from '@/app/(private)/gastos/page';
-import styles from '@/components/patterns/page.module.css';
 const period = { desde: '2026-11-01', hasta: '2026-11-30' };
 const responsePeriod = { desde: '2026-11-01T03:00:00.000Z', hasta: '2026-12-01T02:59:59.999Z' };
 const id = (index: number) => '00000000-0000-4000-8000-' + String(index).padStart(12, '0');
@@ -148,8 +147,7 @@ it('has no financial data or keys in invalid filters', async () => {
 });
 it('keeps filters and the summary responsive at mobile and desktop widths', async () => {
   const html = await page({ empresa: 'ppf-house' });
-  let css = await readFile(new URL('../../src/components/patterns/page.module.css', import.meta.url), 'utf8');
-  css = css.replace(/\.([a-zA-Z][\w-]*)/g, (match, name) => styles[name] ? '.' + styles[name] : match);
+  const css = await appCss();
   const browser = await chromium.launch({ headless: true });
   try {
     for (const width of [390, 1280]) {

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
+import { appCss } from '../fixtures/app-css';
 vi.mock('server-only', () => ({}));
 vi.mock('@/modules/identity/session', () => ({ requireOwner: vi.fn() }));
 const mocks = vi.hoisted(() => ({ summary: vi.fn(), summaries: vi.fn(), movements: vi.fn() }));
@@ -12,7 +12,7 @@ import Page, { MovementSummary, MovementListing } from '@/app/(private)/movimien
 import { requireOwner } from '@/modules/identity/session';
 import { companies } from '@/config/companies';
 import type { MovementFilters } from '@/modules/finance/movements.server';
-import styles from '@/components/patterns/page.module.css';
+import { layout } from '@/components/patterns/page';
 const filters: MovementFilters = { desde: '2026-11-01', hasta: '2026-11-30', empresa: 'todas', tipo: 'todos' };
 const summaries = companies.map(c => ({ empresaId: c.id, nombre: c.name, estado: 'completo', cobros: '100.10', egresos: '30.05', saldoNeto: '70.05' }));
 const result = { complete: true, nextCursor: 'controlled-next', sources: companies.map(c => ({ empresaId: c.id, flujo: 'cobros', key: c.id + ':cobros', available: true })), movements: [
@@ -58,11 +58,10 @@ it('renders filters without cursor and responsive rows at 1440, 768 and 390 px',
   const summary = await MovementSummary({ filters });
   const listing = await MovementListing({ params: filters, filters });
   const children = shell.props.children as React.ReactNode[];
-  const html = renderToStaticMarkup(createElement('div', { className: styles.page }, children[0], children[1], summary, listing));
+  const html = renderToStaticMarkup(createElement('div', { className: layout.page }, children[0], children[1], summary, listing));
   expect(html).not.toContain('name="cursor"');
   for (const name of ['desde', 'hasta', 'empresa', 'tipo']) expect(html).toContain(`name="${name}"`);
-  let css = await readFile('src/components/patterns/page.module.css', 'utf8');
-  css = css.replace(/\.([a-zA-Z][\w-]*)/g, (match, name) => styles[name] ? '.' + styles[name] : match);
+  const css = await appCss();
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();

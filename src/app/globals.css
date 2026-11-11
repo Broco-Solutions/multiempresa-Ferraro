@@ -1,2 +1,228 @@
-@import '../design-system/tokens.css';
-*{box-sizing:border-box}html{color-scheme:light}body{margin:0;background:var(--background);color:var(--text);font-family:var(--font-sans);font-size:14px;line-height:1.5}a{color:inherit;text-decoration:none}button,select{font:inherit}h1,h2,p{margin:0}h1,h2{letter-spacing:-.035em}svg{flex-shrink:0}:focus-visible{outline:3px solid #3d8986;outline-offset:3px}select:disabled{opacity:1;color:#71807e;cursor:not-allowed}
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Multi-Empresa Ferraro · Cockpit
+ * Paleta oficial Ferraro: #000000 · #706F6F · #FFCE13 · #FFFFFF.
+ * El amarillo es marca, foco y selección; nunca un estado semántico.
+ */
+:root {
+  --brand-black: #000000;
+  --brand-gray: #706f6f;
+  --brand-yellow: #ffce13;
+  --brand-white: #ffffff;
+
+  --background: #f7f6f3;
+  --foreground: #181917;
+  --card: #ffffff;
+  --card-foreground: #181917;
+  --popover: #ffffff;
+  --popover-foreground: #181917;
+  --primary: #ffce13;
+  --primary-foreground: #000000;
+  --secondary: #f0eee9;
+  --secondary-foreground: #20211f;
+  --muted: #f0eee9;
+  --muted-foreground: #5d605b;
+  --accent: #f0eee9;
+  --accent-foreground: #181917;
+  --border: #e4e2dc;
+  --input: #d9d6cf;
+  --ring: #b08d00;
+  --highlight: #8a6d00;
+
+  --success: #1f7a47;
+  --success-surface: #e6f3eb;
+  --danger: #b42c2a;
+  --danger-surface: #fbe9e7;
+  --warning: #8a5300;
+  --warning-surface: #fff1d6;
+  --info: #205a82;
+  --info-surface: #e5f0f7;
+
+  --sidebar: #0b0b0b;
+  --sidebar-foreground: #f7f6f2;
+  --sidebar-muted: #a7a8a3;
+  --sidebar-border: #232322;
+  --sidebar-hover: #1a1a19;
+
+  --company-ferraro: #e0b100;
+  --company-ppf: #52525b;
+  --company-rfn: #cd3330;
+
+  --grid-line: rgb(0 0 0 / 4.5%);
+  --glow: rgb(255 206 19 / 22%);
+  --surface-glass: rgb(255 255 255 / 72%);
+  --radius: 0.875rem;
+}
+
+.dark {
+  --background: #070707;
+  --foreground: #f5f5f4;
+  --card: #0f0f10;
+  --card-foreground: #f5f5f4;
+  --popover: #141415;
+  --popover-foreground: #f5f5f4;
+  --primary: #ffce13;
+  --primary-foreground: #000000;
+  --secondary: #1a1a1b;
+  --secondary-foreground: #f5f5f4;
+  --muted: #18181a;
+  --muted-foreground: #a3a3a0;
+  --accent: #1d1d1f;
+  --accent-foreground: #f5f5f4;
+  --border: rgb(255 255 255 / 8.5%);
+  --input: rgb(255 255 255 / 13%);
+  --ring: #ffce13;
+  --highlight: #ffce13;
+
+  --success: #4ade80;
+  --success-surface: rgb(74 222 128 / 10%);
+  --danger: #f87171;
+  --danger-surface: rgb(248 113 113 / 10%);
+  --warning: #fbbf24;
+  --warning-surface: rgb(251 191 36 / 10%);
+  --info: #7dd3fc;
+  --info-surface: rgb(125 211 252 / 10%);
+
+  --sidebar: #000000;
+  --sidebar-border: rgb(255 255 255 / 7%);
+  --sidebar-hover: rgb(255 255 255 / 5%);
+
+  --company-ferraro: #ffce13;
+  --company-ppf: #d4d4d8;
+  --company-rfn: #ef4b47;
+
+  --grid-line: rgb(255 255 255 / 3.2%);
+  --glow: rgb(255 206 19 / 13%);
+  --surface-glass: rgb(20 20 21 / 72%);
+}
+
+@theme inline {
+  --font-sans: var(--font-inter), 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-mono-numbers), ui-monospace, 'SFMono-Regular', Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-highlight: var(--highlight);
+  --color-success: var(--success);
+  --color-success-surface: var(--success-surface);
+  --color-danger: var(--danger);
+  --color-danger-surface: var(--danger-surface);
+  --color-warning: var(--warning);
+  --color-warning-surface: var(--warning-surface);
+  --color-info: var(--info);
+  --color-info-surface: var(--info-surface);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-brand-yellow: var(--brand-yellow);
+  --color-brand-gray: var(--brand-gray);
+  --color-ferraro: var(--company-ferraro);
+  --color-ppf: var(--company-ppf);
+  --color-rfn: var(--company-rfn);
+
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: calc(var(--radius) - 2px);
+  --radius-xl: var(--radius);
+  --radius-2xl: calc(var(--radius) + 4px);
+
+  --animate-rise: rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+  --animate-pulse-dot: pulse-dot 2.4s ease-in-out infinite;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); filter: blur(4px); }
+    to { opacity: 1; transform: none; filter: none; }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+  @keyframes pulse-dot {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 45%, transparent); }
+    50% { box-shadow: 0 0 0 5px transparent; }
+  }
+}
+
+@layer base {
+  * { @apply border-border; box-sizing: border-box; }
+  html { color-scheme: light; }
+  html.dark { color-scheme: dark; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  a { color: inherit; text-decoration: none; }
+  h1, h2, h3, p { margin: 0; }
+  h1, h2 { letter-spacing: -0.03em; }
+  svg { flex-shrink: 0; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+  ::selection { background: var(--brand-yellow); color: #000; }
+  input[type='date']::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; }
+  .dark input[type='date']::-webkit-calendar-picker-indicator { filter: invert(1); }
+  select:disabled { opacity: 1; cursor: not-allowed; }
+}
+
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+@layer components {
+  /* Cuadrícula técnica de fondo: ritmo del isotipo Ferraro (división en tres). */
+  .cockpit-grid {
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  .cockpit-glow { background: radial-gradient(60% 60% at 50% 0%, var(--glow), transparent 70%); }
+  .glass { background: var(--surface-glass); backdrop-filter: blur(16px) saturate(140%); }
+  .card-sheen { position: relative; isolation: isolate; }
+  .card-sheen::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(180deg, rgb(255 255 255 / 10%), transparent 40%);
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    pointer-events: none;
+    z-index: -1;
+  }
+  :root:not(.dark) .card-sheen::before { display: none; }
+  .skeleton-shimmer {
+    background: linear-gradient(90deg, var(--muted) 0%, color-mix(in oklab, var(--muted), var(--foreground) 6%) 50%, var(--muted) 100%);
+    background-size: 200% 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
